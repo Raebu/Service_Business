@@ -15,7 +15,7 @@
     "test": "tsx --test packages/platform/src/*.test.ts"
   },
   "devDependencies": {
-    "next": "15.5.2",
+    "next": "15.5.18",
     "tsx": "^4.20.5"
   }
 }
