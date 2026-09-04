@@ -27,3 +27,4 @@ export function canPubliclyClaimNationalCoverage(totalVerifiedBusinesses:number,
 }
 
 export * from './verification';
+export * from './domain';
