@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { electricalBrand } from '@service-business/electrical';
 import './styles.css';
+import './brand.css';
 
 export const metadata: Metadata = {
   title: {
