@@ -1,26 +1,18 @@
 # Service Business Platform
 
-Reusable multi-vertical managed-services platform for service businesses.
+This repository contains the shared production platform for service-business verticals, beginning with electrical services.
 
-The repository separates shared marketplace/managed-service architecture from vertical-specific configuration. The first vertical is electrical services, but the platform is designed to support HVAC, landscaping and other service categories without duplicating the core product.
+## Core principles
 
-## Principles
+- Shared platform architecture with vertical-specific configuration.
+- Supply-first launch gating: recruit and verify providers before activating customer demand in an area.
+- Audience-specific experiences for customers, businesses, providers, education partners and internal operations.
+- Transparent commercial rules with no hidden double-dipping.
+- Zero-routine-work automation: deterministic straight-through processing first, exception handling second.
+- Auditability by design across jobs, compliance, payments and finance.
 
-- Audience-led journeys: customers, business clients, service providers, training partners and authenticated users.
-- Managed service, not a lead-selling directory.
-- Supply-first launch gating: do not market an area as covered until verified provider capacity meets configured thresholds.
-- Verification is evidence-backed and expiring, not a decorative badge.
-- Corporate and consumer experiences are separate products on the same platform.
-- Brand, terminology, services, compliance rules and launch thresholds live in vertical configuration.
+## Current foundation
 
-## Planned structure
+The repository includes provider verification, public verification profiles, coverage gating, customer booking, business enquiries, Academy interest, authentication/portals, job dispatch and offer lifecycle, operations controls, evidence moderation, reviews/quality feedback, notifications substrate, and critical foundations for individual engineer identities, competencies, availability, provider-owned rate cards, structured scheduling, geolocation fields and an append-only balanced finance journal.
 
-- `apps/web` — public website and portal entry point.
-- `packages/platform` — reusable types, launch-readiness logic and vertical contracts.
-- `packages/ui` — shared visual primitives.
-- `verticals/electrical` — electrical-specific configuration and copy.
-- `docs` — architecture, trust, verification and launch strategy.
-
-## Status
-
-Initial platform foundation in progress.
+The electrical vertical remains the first implementation. Production Supabase/hosting/Stripe wiring is intentionally kept environment-specific and must be connected before the public domain is moved from the legacy prototype.
