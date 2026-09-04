@@ -2,6 +2,11 @@
   "name": "service-business-platform",
   "private": true,
   "packageManager": "pnpm@11.5.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "verticals/*"
+  ],
   "scripts": {
     "dev": "pnpm --filter @service-business/web dev",
     "build": "pnpm --filter @service-business/web build",
