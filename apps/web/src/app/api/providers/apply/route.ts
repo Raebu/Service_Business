@@ -28,6 +28,14 @@ export async function POST(request:Request){
       status:'submitted'
     }).select('id,status,created_at').single();
     if(error)return NextResponse.json({error:'Unable to save the application.'},{status:500});
+    await supabase.rpc('queue_notification',{
+      p_recipient_user_id:null,
+      p_recipient_email:input.email,
+      p_channel:'email',
+      p_template_key:'provider.application_received',
+      p_payload:{applicationId:data.id,businessName:input.businessName,contactName:input.contactName},
+      p_scheduled_at:new Date().toISOString()
+    });
     return NextResponse.json({application:data,message:'Application received. Verification begins before any customer work can be allocated.'},{status:201});
   }catch(error){
     if(error instanceof SupabaseConfigurationError)return NextResponse.json({error:'Provider applications are not connected to the production database yet.'},{status:503});
