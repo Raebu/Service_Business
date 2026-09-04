@@ -12,80 +12,21 @@ const escapeHtml=(value:unknown)=>String(value??'').replace(/[&<>"']/g,char=>({'
 const value=(payload:Record<string,unknown>,key:string,fallback='')=>String(payload[key]??fallback);
 
 const templates:Record<string,(payload:Record<string,unknown>)=>RenderedNotification>={
-  'provider.application_received':p=>({
-    subject:'National Electrician Hub application received',
-    text:`Thanks ${value(p,'contactName','there')}. We have received the application for ${value(p,'businessName','your electrical business')}. We will only activate the profile after the required verification evidence is accepted.`,
-    html:`<p>Thanks ${escapeHtml(value(p,'contactName','there'))}.</p><p>We have received the application for <strong>${escapeHtml(value(p,'businessName','your electrical business'))}</strong>.</p><p>We will only activate the profile after the required verification evidence is accepted.</p>`
-  }),
-  'provider.evidence_verified':p=>({
-    subject:`Verification evidence approved — ${value(p,'label','document')}`,
-    text:`Your ${value(p,'label','verification document')} has been approved.${value(p,'expiresAt')?` It is recorded as expiring on ${value(p,'expiresAt')}.`:''}`,
-    html:`<p>Your <strong>${escapeHtml(value(p,'label','verification document'))}</strong> has been approved.</p>${value(p,'expiresAt')?`<p>Recorded expiry: ${escapeHtml(value(p,'expiresAt'))}.</p>`:''}`
-  }),
-  'provider.evidence_rejected':p=>({
-    subject:`Action required — ${value(p,'label','verification evidence')}`,
-    text:`We could not approve ${value(p,'label','the submitted evidence')}. ${value(p,'reason','Please review the document and upload valid evidence.')}`,
-    html:`<p>We could not approve <strong>${escapeHtml(value(p,'label','the submitted evidence'))}</strong>.</p><p>${escapeHtml(value(p,'reason','Please review the document and upload valid evidence.'))}</p>`
-  }),
-  'provider.compliance_expiring':p=>({
-    subject:`Verification evidence expires soon — ${value(p,'label','document')}`,
-    text:`Your ${value(p,'label','verification document')} expires on ${value(p,'expiresAt','the recorded expiry date')}. Upload replacement evidence before expiry to avoid automatic dispatch suspension.`,
-    html:`<p>Your <strong>${escapeHtml(value(p,'label','verification document'))}</strong> expires on <strong>${escapeHtml(value(p,'expiresAt','the recorded expiry date'))}</strong>.</p><p>Upload replacement evidence before expiry to avoid automatic dispatch suspension.</p>`
-  }),
-  'job.offer_created':p=>({
-    subject:`New electrical job offer — ${value(p,'postcode','')}`,
-    text:`A new ${value(p,'serviceKey','electrical')} job is available in ${value(p,'postcode','your area')}. Provider payout: ${value(p,'providerPrice','see portal')}. The offer expires at ${value(p,'expiresAt','the time shown in your portal')}.`,
-    html:`<p>A new <strong>${escapeHtml(value(p,'serviceKey','electrical'))}</strong> job is available in <strong>${escapeHtml(value(p,'postcode','your area'))}</strong>.</p><p>Provider payout: <strong>${escapeHtml(value(p,'providerPrice','see portal'))}</strong>.</p><p>Offer expiry: ${escapeHtml(value(p,'expiresAt','see portal'))}.</p>`
-  }),
-  'job.accepted_customer':p=>({
-    subject:'Your electrician has accepted the booking',
-    text:`Your ${value(p,'serviceKey','electrical')} booking has been accepted by ${value(p,'providerName','a verified electrical business')}.${value(p,'engineerName')?` Assigned electrician: ${value(p,'engineerName')}.`:''}`,
-    html:`<p>Your <strong>${escapeHtml(value(p,'serviceKey','electrical'))}</strong> booking has been accepted by <strong>${escapeHtml(value(p,'providerName','a verified electrical business'))}</strong>.</p>${value(p,'engineerName')?`<p>Assigned electrician: ${escapeHtml(value(p,'engineerName'))}.</p>`:''}`
-  }),
-  'job.payment_received':p=>({
-    subject:'Payment received for your electrical booking',
-    text:`We have received payment of ${value(p,'customerTotal','your booking total')}. The electrician's agreed price and the National Electrician Hub service fee remain separately recorded in your booking.`,
-    html:`<p>We have received payment of <strong>${escapeHtml(value(p,'customerTotal','your booking total'))}</strong>.</p><p>The electrician's agreed price and the National Electrician Hub service fee remain separately recorded in your booking.</p>`
-  }),
-  'job.completed':p=>({
-    subject:'Electrical job marked complete',
-    text:`Your ${value(p,'serviceKey','electrical')} job has been marked complete. If anything is wrong, raise it through the booking support flow before settlement clearance.`,
-    html:`<p>Your <strong>${escapeHtml(value(p,'serviceKey','electrical'))}</strong> job has been marked complete.</p><p>If anything is wrong, raise it through the booking support flow before settlement clearance.</p>`
-  }),
-  'job.refund_processed':p=>({
-    subject:'Refund processed',
-    text:`A refund of ${value(p,'refundAmount','the approved amount')} has been processed for your booking. Your bank or payment provider controls when the funds appear.`,
-    html:`<p>A refund of <strong>${escapeHtml(value(p,'refundAmount','the approved amount'))}</strong> has been processed for your booking.</p><p>Your bank or payment provider controls when the funds appear.</p>`
-  }),
-  'job.rework_required':p=>({
-    subject:'Service recovery arranged for your booking',
-    text:`A rework/service-recovery action has been opened for your booking. ${value(p,'nextStep','We will use the booking record to coordinate the next eligible action.')}`,
-    html:`<p>A rework/service-recovery action has been opened for your booking.</p><p>${escapeHtml(value(p,'nextStep','We will use the booking record to coordinate the next eligible action.'))}</p>`
-  })
+  'provider.application_received':p=>({subject:'National Electrician Hub application received',text:`Thanks ${value(p,'contactName','there')}. We have received the application for ${value(p,'businessName','your electrical business')}. We will only activate the profile after the required verification evidence is accepted.`,html:`<p>Thanks ${escapeHtml(value(p,'contactName','there'))}.</p><p>We have received the application for <strong>${escapeHtml(value(p,'businessName','your electrical business'))}</strong>.</p><p>We will only activate the profile after the required verification evidence is accepted.</p>`}),
+  'provider.evidence_verified':p=>({subject:`Verification evidence approved — ${value(p,'label','document')}`,text:`Your ${value(p,'label','verification document')} has been approved.${value(p,'expiresAt')?` It is recorded as expiring on ${value(p,'expiresAt')}.`:''}`,html:`<p>Your <strong>${escapeHtml(value(p,'label','verification document'))}</strong> has been approved.</p>${value(p,'expiresAt')?`<p>Recorded expiry: ${escapeHtml(value(p,'expiresAt'))}.</p>`:''}`}),
+  'provider.evidence_rejected':p=>({subject:`Action required — ${value(p,'label','verification evidence')}`,text:`We could not approve ${value(p,'label','the submitted evidence')}. ${value(p,'reason','Please review the document and upload valid evidence.')}`,html:`<p>We could not approve <strong>${escapeHtml(value(p,'label','the submitted evidence'))}</strong>.</p><p>${escapeHtml(value(p,'reason','Please review the document and upload valid evidence.'))}</p>`}),
+  'provider.compliance_expiring':p=>({subject:`Verification evidence expires soon — ${value(p,'label','document')}`,text:`Your ${value(p,'label','verification document')} expires on ${value(p,'expiresAt','the recorded expiry date')}. Upload replacement evidence before expiry to avoid automatic dispatch suspension.`,html:`<p>Your <strong>${escapeHtml(value(p,'label','verification document'))}</strong> expires on <strong>${escapeHtml(value(p,'expiresAt','the recorded expiry date'))}</strong>.</p><p>Upload replacement evidence before expiry to avoid automatic dispatch suspension.</p>`}),
+  'job.offer_created':p=>({subject:`New electrical job offer — ${value(p,'postcode','')}`,text:`A new ${value(p,'serviceKey','electrical')} job is available in ${value(p,'postcode','your area')}. Provider payout: ${value(p,'providerPrice','see portal')}. The offer expires at ${value(p,'expiresAt','the time shown in your portal')}.`,html:`<p>A new <strong>${escapeHtml(value(p,'serviceKey','electrical'))}</strong> job is available in <strong>${escapeHtml(value(p,'postcode','your area'))}</strong>.</p><p>Provider payout: <strong>${escapeHtml(value(p,'providerPrice','see portal'))}</strong>.</p><p>Offer expiry: ${escapeHtml(value(p,'expiresAt','see portal'))}.</p>`}),
+  'job.accepted_customer':p=>({subject:'Your electrician has accepted the booking',text:`Your ${value(p,'serviceKey','electrical')} booking has been accepted by ${value(p,'providerName','a verified electrical business')}.${value(p,'engineerName')?` Assigned electrician: ${value(p,'engineerName')}.`:''}`,html:`<p>Your <strong>${escapeHtml(value(p,'serviceKey','electrical'))}</strong> booking has been accepted by <strong>${escapeHtml(value(p,'providerName','a verified electrical business'))}</strong>.</p>${value(p,'engineerName')?`<p>Assigned electrician: ${escapeHtml(value(p,'engineerName'))}.</p>`:''}`}),
+  'job.payment_received':p=>({subject:'Payment received for your electrical booking',text:`We have received payment of ${value(p,'customerTotal','your booking total')}. The electrician's agreed price and the National Electrician Hub service fee remain separately recorded in your booking.`,html:`<p>We have received payment of <strong>${escapeHtml(value(p,'customerTotal','your booking total'))}</strong>.</p><p>The electrician's agreed price and the National Electrician Hub service fee remain separately recorded in your booking.</p>`}),
+  'job.completed':p=>({subject:'Electrical job marked complete',text:`Your ${value(p,'serviceKey','electrical')} job has been marked complete. If anything is wrong, raise it through the booking support flow before settlement clearance.`,html:`<p>Your <strong>${escapeHtml(value(p,'serviceKey','electrical'))}</strong> job has been marked complete.</p><p>If anything is wrong, raise it through the booking support flow before settlement clearance.</p>`}),
+  'job.refund_processed':p=>({subject:'Refund processed',text:`A refund of ${value(p,'refundAmount','the approved amount')} has been processed for your booking. Your bank or payment provider controls when the funds appear.`,html:`<p>A refund of <strong>${escapeHtml(value(p,'refundAmount','the approved amount'))}</strong> has been processed for your booking.</p><p>Your bank or payment provider controls when the funds appear.</p>`}),
+  'job.rework_required':p=>({subject:'Service recovery arranged for your booking',text:`A rework/service-recovery action has been opened for your booking. ${value(p,'nextStep','We will use the booking record to coordinate the next eligible action.')}`,html:`<p>A rework/service-recovery action has been opened for your booking.</p><p>${escapeHtml(value(p,'nextStep','We will use the booking record to coordinate the next eligible action.'))}</p>`}),
+  'job.no_show_recovery':p=>({subject:'We are recovering your booking',text:`We detected that the scheduled attendance may have been missed for job ${value(p,'jobId')}. ${value(p,'nextStep','Settlement is held while the platform applies the approved recovery policy.')}`,html:`<p>We detected that the scheduled attendance may have been missed.</p><p>${escapeHtml(value(p,'nextStep','Settlement is held while the platform applies the approved recovery policy.'))}</p>`}),
+  'job.delay_detected':p=>({subject:'Your electrical appointment may be delayed',text:`We detected a timing risk for your booking. ${value(p,'nextStep','The platform is checking the current route and job progress and will surface recovery if required.')}`,html:`<p>We detected a timing risk for your booking.</p><p>${escapeHtml(value(p,'nextStep','The platform is checking the current route and job progress and will surface recovery if required.'))}</p>`}),
+  'corporate_sla_breach':p=>({subject:`SLA alert — ${value(p,'slaName','electrical service')}`,text:`An SLA threshold has been exceeded for job ${value(p,'jobId')}${value(p,'postcode')?` in ${value(p,'postcode')}`:''}. Reasons: ${Array.isArray(p.reasons)?p.reasons.join(', '):value(p,'reasons','threshold exceeded')}.`,html:`<p>An SLA threshold has been exceeded for job <strong>${escapeHtml(value(p,'jobId'))}</strong>${value(p,'postcode')?` in <strong>${escapeHtml(value(p,'postcode'))}</strong>`:''}.</p><p>Reasons: ${escapeHtml(Array.isArray(p.reasons)?p.reasons.join(', '):value(p,'reasons','threshold exceeded'))}.</p>`})
 };
 
-export function renderNotification(templateKey:string,payload:Record<string,unknown>):RenderedNotification{
-  const renderer=templates[templateKey];
-  if(!renderer)throw new Error(`unsupported_notification_template:${templateKey}`);
-  const rendered=renderer(payload);
-  const footer='<hr><p style="font-size:12px;color:#667085">National Electrician Hub and Raeburn Services are trading names of The Raeburn Holding Group Limited. Registered in England and Wales. Company No. 17361231.</p>';
-  return{...rendered,html:`${rendered.html}${footer}`};
-}
+export function renderNotification(templateKey:string,payload:Record<string,unknown>):RenderedNotification{const renderer=templates[templateKey];if(!renderer)throw new Error(`unsupported_notification_template:${templateKey}`);const rendered=renderer(payload);const footer='<hr><p style="font-size:12px;color:#667085">National Electrician Hub and Raeburn Services are trading names of The Raeburn Holding Group Limited. Registered in England and Wales. Company No. 17361231.</p>';return{...rendered,html:`${rendered.html}${footer}`}}
 
-export async function deliverNotification(record:NotificationRecord):Promise<{providerMessageId:string|null}>{
-  if(record.channel!=='email')throw new Error(`notification_channel_not_configured:${record.channel}`);
-  if(!record.recipient_email)throw new Error('notification_email_missing');
-  const apiKey=process.env.RESEND_API_KEY;
-  const from=process.env.NOTIFICATION_FROM_EMAIL;
-  if(!apiKey||!from)throw new Error('email_delivery_not_configured');
-  const rendered=renderNotification(record.template_key,record.payload||{});
-  const response=await fetch('https://api.resend.com/emails',{
-    method:'POST',
-    headers:{authorization:`Bearer ${apiKey}`,'content-type':'application/json'},
-    body:JSON.stringify({from,to:[record.recipient_email],subject:rendered.subject,text:rendered.text,html:rendered.html,reply_to:process.env.NOTIFICATION_REPLY_TO||undefined}),
-    cache:'no-store'
-  });
-  const data=await response.json().catch(()=>({})) as {id?:string;message?:string;name?:string};
-  if(!response.ok)throw new Error(`email_provider_error:${response.status}:${data.message||data.name||'unknown'}`);
-  return{providerMessageId:data.id||null};
-}
+export async function deliverNotification(record:NotificationRecord):Promise<{providerMessageId:string|null}>{if(record.channel!=='email')throw new Error(`notification_channel_not_configured:${record.channel}`);if(!record.recipient_email)throw new Error('notification_email_missing');const apiKey=process.env.RESEND_API_KEY;const from=process.env.NOTIFICATION_FROM_EMAIL;if(!apiKey||!from)throw new Error('email_delivery_not_configured');const rendered=renderNotification(record.template_key,record.payload||{});const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{authorization:`Bearer ${apiKey}`,'content-type':'application/json'},body:JSON.stringify({from,to:[record.recipient_email],subject:rendered.subject,text:rendered.text,html:rendered.html,reply_to:process.env.NOTIFICATION_REPLY_TO||undefined}),cache:'no-store'});const data=await response.json().catch(()=>({})) as {id?:string;message?:string;name?:string};if(!response.ok)throw new Error(`email_provider_error:${response.status}:${data.message||data.name||'unknown'}`);return{providerMessageId:data.id||null}}
