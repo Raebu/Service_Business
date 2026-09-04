@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent,useState } from 'react';
+import { CustomerBookingProgress } from './CustomerBookingProgress';
 
 export function BookingForm(){
   const[message,setMessage]=useState('');
@@ -9,6 +10,7 @@ export function BookingForm(){
   const[latitude,setLatitude]=useState('');
   const[longitude,setLongitude]=useState('');
   const[locationMessage,setLocationMessage]=useState('');
+  const[booking,setBooking]=useState<{jobId:string;token:string}|null>(null);
 
   function useLocation(){
     if(!navigator.geolocation){setLocationMessage('Live location is not supported by this browser. Your address and postcode are enough to continue.');return}
@@ -30,9 +32,14 @@ export function BookingForm(){
       const response=await fetch('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       const data=await response.json();
       setMessage(data.message||data.error||'Unable to submit the request.');
-      if(response.ok&&response.status===201){event.currentTarget.reset();setScheduleMode('asap');setLatitude('');setLongitude('');}
+      if(response.ok&&response.status===201&&data.job?.id&&data.bookingToken){
+        setBooking({jobId:data.job.id,token:data.bookingToken});
+        event.currentTarget.reset();setScheduleMode('asap');setLatitude('');setLongitude('');
+      }
     }catch{setMessage('Unable to reach the booking service. Please try again.')}finally{setBusy(false)}
   }
+
+  if(booking)return <div className='booking-stack'><CustomerBookingProgress jobId={booking.jobId} token={booking.token}/><button className='button' type='button' onClick={()=>{setBooking(null);setMessage('')}}>Request another job</button></div>;
 
   return <form className='form-card' onSubmit={submit}>
     <h2>Request electrical work</h2>
