@@ -48,6 +48,23 @@ export const jobIntakeSchema=z.object({
   serviceKey:z.string().trim().max(120).optional().or(z.literal(''))
 });
 
+const verificationEvidenceSchema=z.object({
+  kind:z.enum(['business_identity','qualification','scheme_membership','insurance','other']),
+  label:z.string().trim().min(2).max(180),
+  reference:z.string().trim().max(300).optional().or(z.literal('')),
+  expiresAt:z.string().trim().optional().or(z.literal(''))
+});
+
+export const approveProviderSchema=z.object({
+  publicSlug:z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).min(3).max(80),
+  evidence:z.array(verificationEvidenceSchema).min(3).max(30)
+}).superRefine((value,ctx)=>{
+  const kinds=new Set(value.evidence.map(item=>item.kind));
+  if(!kinds.has('business_identity'))ctx.addIssue({code:'custom',path:['evidence'],message:'Business identity evidence is required.'});
+  if(!kinds.has('insurance'))ctx.addIssue({code:'custom',path:['evidence'],message:'Insurance evidence is required.'});
+  if(!kinds.has('qualification')&&!kinds.has('scheme_membership'))ctx.addIssue({code:'custom',path:['evidence'],message:'Qualification or scheme-membership evidence is required.'});
+});
+
 export function formatZodError(error:z.ZodError){
   return error.issues.map(i=>({field:i.path.join('.'),message:i.message}));
 }
