@@ -28,7 +28,8 @@ export async function POST(request:Request){
       status:'submitted'
     }).select('id,status,created_at').single();
     if(error)return NextResponse.json({error:'Unable to save the application.'},{status:500});
-    await supabase.rpc('queue_notification',{
+    await supabase.rpc('queue_notification_once',{
+      p_dedupe_key:`provider.application_received:${data.id}`,
       p_recipient_user_id:null,
       p_recipient_email:input.email,
       p_channel:'email',
