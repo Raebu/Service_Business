@@ -11,7 +11,11 @@ const schema=z.object({
   autoAccept:z.boolean().default(false),
   minimumJobPence:z.coerce.number().int().min(0).default(0),
   maximumDurationMinutes:z.coerce.number().int().positive().max(1440).optional(),
-  maximumTravelMinutes:z.coerce.number().int().positive().max(480).optional()
+  maximumTravelMinutes:z.coerce.number().int().positive().max(480).optional(),
+  bufferBeforeMinutes:z.coerce.number().int().min(0).max(240).default(15),
+  bufferAfterMinutes:z.coerce.number().int().min(0).max(240).default(15),
+  maximumJobsPerDay:z.coerce.number().int().min(1).max(50).optional(),
+  allowedServiceKeys:z.array(z.string().trim().min(2).max(120)).max(50).default([])
 }).refine(v=>v.endTime>v.startTime,{path:['endTime'],message:'End time must be after start time.'});
 
 export async function POST(request:Request,{params}:{params:Promise<{engineerId:string}>}){
@@ -23,9 +27,9 @@ export async function POST(request:Request,{params}:{params:Promise<{engineerId:
     const {data:engineer}=await admin.from('engineers').select('id,organisation_id,user_id').eq('id',engineerId).maybeSingle();if(!engineer)return NextResponse.json({error:'Engineer not found.'},{status:404});
     const {data:membership}=await admin.from('organisation_members').select('role').eq('organisation_id',engineer.organisation_id).eq('user_id',user.id).maybeSingle();
     const allowed=engineer.user_id===user.id||Boolean(membership&&['owner','admin','manager','dispatcher'].includes(membership.role));if(!allowed)return NextResponse.json({error:'You cannot manage this schedule.'},{status:403});
-    const {data:rule,error}=await admin.from('engineer_availability_rules').insert({engineer_id:engineerId,day_of_week:parsed.data.dayOfWeek,start_time:parsed.data.startTime,end_time:parsed.data.endTime,timezone:parsed.data.timezone,auto_accept:parsed.data.autoAccept,minimum_job_pence:parsed.data.minimumJobPence,maximum_duration_minutes:parsed.data.maximumDurationMinutes??null,maximum_travel_minutes:parsed.data.maximumTravelMinutes??null,active:true}).select('*').single();
+    const {data:rule,error}=await admin.from('engineer_availability_rules').insert({engineer_id:engineerId,day_of_week:parsed.data.dayOfWeek,start_time:parsed.data.startTime,end_time:parsed.data.endTime,timezone:parsed.data.timezone,auto_accept:parsed.data.autoAccept,minimum_job_pence:parsed.data.minimumJobPence,maximum_duration_minutes:parsed.data.maximumDurationMinutes??null,maximum_travel_minutes:parsed.data.maximumTravelMinutes??null,buffer_before_minutes:parsed.data.bufferBeforeMinutes,buffer_after_minutes:parsed.data.bufferAfterMinutes,maximum_jobs_per_day:parsed.data.maximumJobsPerDay??null,allowed_service_keys:parsed.data.allowedServiceKeys,active:true}).select('*').single();
     if(error)return NextResponse.json({error:'Unable to save availability.',detail:error.message},{status:500});
-    await admin.from('audit_events').insert({actor_user_id:user.id,event_type:'engineer.availability_added',entity_type:'engineer',entity_id:engineerId,metadata:{ruleId:rule.id,dayOfWeek:parsed.data.dayOfWeek,autoAccept:parsed.data.autoAccept}});
+    await admin.from('audit_events').insert({actor_user_id:user.id,event_type:'engineer.availability_added',entity_type:'engineer',entity_id:engineerId,metadata:{ruleId:rule.id,dayOfWeek:parsed.data.dayOfWeek,autoAccept:parsed.data.autoAccept,bufferBeforeMinutes:parsed.data.bufferBeforeMinutes,bufferAfterMinutes:parsed.data.bufferAfterMinutes,maximumJobsPerDay:parsed.data.maximumJobsPerDay,allowedServiceKeys:parsed.data.allowedServiceKeys}});
     return NextResponse.json({rule,message:'Availability rule saved.'},{status:201});
   }catch(error){if(error instanceof SupabaseConfigurationError)return NextResponse.json({error:'Production database credentials are not configured.'},{status:503});return NextResponse.json({error:'Unable to save availability.'},{status:500});}
 }
