@@ -3,6 +3,7 @@ import { z } from 'zod';
 const postcode=z.string().trim().min(2).max(12).transform(v=>v.toUpperCase().replace(/\s+/g,' '));
 const email=z.string().trim().toLowerCase().email();
 const phone=z.string().trim().min(7).max(30);
+const optionalCoordinate=(min:number,max:number)=>z.preprocess(v=>v===''||v==null?undefined:Number(v),z.number().min(min).max(max).optional());
 
 export const providerApplicationSchema=z.object({
   businessName:z.string().trim().min(2).max(160),
@@ -45,7 +46,25 @@ export const jobIntakeSchema=z.object({
   description:z.string().trim().min(8).max(5000),
   urgency:z.enum(['routine','soon','urgent','emergency']).default('routine'),
   preferredWindow:z.string().trim().max(120).optional().or(z.literal('')),
-  serviceKey:z.string().trim().max(120).optional().or(z.literal(''))
+  serviceKey:z.string().trim().max(120).optional().or(z.literal('')),
+  scheduleMode:z.enum(['asap','exact','window','flexible']).default('asap'),
+  requestedStart:z.string().datetime({offset:true}).optional().or(z.literal('')),
+  requestedEnd:z.string().datetime({offset:true}).optional().or(z.literal('')),
+  latitude:optionalCoordinate(-90,90),
+  longitude:optionalCoordinate(-180,180)
+}).superRefine((value,ctx)=>{
+  if(value.scheduleMode!=='asap'&&!value.requestedStart){
+    ctx.addIssue({code:'custom',path:['requestedStart'],message:'Choose the requested date and time.'});
+  }
+  if((value.scheduleMode==='window'||value.scheduleMode==='flexible')&&!value.requestedEnd){
+    ctx.addIssue({code:'custom',path:['requestedEnd'],message:'Choose the end of the requested window.'});
+  }
+  if(value.requestedStart&&value.requestedEnd&&new Date(value.requestedEnd)<=new Date(value.requestedStart)){
+    ctx.addIssue({code:'custom',path:['requestedEnd'],message:'The end of the window must be after the start.'});
+  }
+  if((value.latitude==null)!==(value.longitude==null)){
+    ctx.addIssue({code:'custom',path:['latitude'],message:'Location coordinates must be supplied together.'});
+  }
 });
 
 const verificationEvidenceSchema=z.object({
