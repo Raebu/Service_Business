@@ -29,6 +29,13 @@ export function BookingForm(){
     if(body.requestedStart)body.requestedStart=new Date(body.requestedStart).toISOString();
     if(body.requestedEnd)body.requestedEnd=new Date(body.requestedEnd).toISOString();
     try{
+      if(body.scheduleMode==='exact'&&body.requestedStart){
+        setMessage('Checking the requested appointment against live electrician schedules…');
+        const availabilityResponse=await fetch('/api/availability/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({postcode:body.postcode,description:body.description,serviceKey:body.serviceKey||undefined,requestedStart:body.requestedStart,latitude:latitude?Number(latitude):undefined,longitude:longitude?Number(longitude):undefined})});
+        const availability=await availabilityResponse.json().catch(()=>({}));
+        if(!availabilityResponse.ok){setMessage(availability.error||'Unable to verify this appointment time. Please try again.');return}
+        if(!availability.available){setMessage(availability.message||'No eligible electrician currently passes the requested appointment constraints. Please choose another time.');return}
+      }
       const response=await fetch('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       const data=await response.json();
       setMessage(data.message||data.error||'Unable to submit the request.');
@@ -62,8 +69,8 @@ export function BookingForm(){
       {(scheduleMode==='window'||scheduleMode==='flexible')&&<label>Window ends<input type='datetime-local' name='requestedEnd' required/></label>}
     </div>}
     <label>Anything else about timing?<input name='preferredWindow' placeholder='e.g. school run means not before 09:30'/></label>
-    <button className='button primary' disabled={busy}>{busy?'Checking coverage…':'Check coverage & request work'}</button>
+    <button className='button primary' disabled={busy}>{busy?'Checking live availability…':'Check coverage & request work'}</button>
     {message&&<p className='form-message' role='status'>{message}</p>}
-    <p className='form-help'>For planned work we match the requested slot against engineer calendars, estimated job duration and travel time. For ASAP work, location can improve ETA ranking. A job only enters matching where verified provider coverage has reached the live threshold.</p>
+    <p className='form-help'>Exact appointments are checked against live engineer working hours, existing bookings, service permissions, daily limits and travel constraints before the request is created. Window and flexible requests are evaluated across dispatch. Final booking is confirmed when an eligible electrician accepts.</p>
   </form>;
 }
