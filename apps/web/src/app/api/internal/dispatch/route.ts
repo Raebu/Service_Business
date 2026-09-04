@@ -9,6 +9,7 @@ const DAY_INDEX:Record<string,number>={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6
 type Engineer={id:string;organisation_id:string;available_now:boolean;can_work_unsupervised:boolean;status:string};
 type Availability={engineer_id:string;day_of_week:number;start_time:string;end_time:string;auto_accept:boolean;minimum_job_pence:number;maximum_duration_minutes:number|null;maximum_travel_minutes:number|null};
 type BusyJob={assigned_engineer_id:string;requested_start:string|null;requested_end:string|null;estimated_duration_minutes:number|null;status:string};
+type DispatchOffer={offerId?:string;providerId:string;engineerId?:string;score?:number;expiresAt?:string;quote?:{providerPricePence:number;platformFeePence:number;customerTotalPence:number;providerReceivesPence:number;customerFeeBps:number;currency:'GBP'};autoAccept?:boolean;status?:string};
 
 function londonDayAndTime(date:Date){
   const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(date);
@@ -103,13 +104,13 @@ export async function POST(request:Request){
       }
       const ranked=rankProviders(prepared.map(p=>p.scoreInput));
       if(!ranked.length){results.push({jobId:job.id,status:'no_priced_engineer_available'});continue}
-      const maxOffers=fanoutCount(job.urgency);let accepted=false;const offers=[];
+      const maxOffers=fanoutCount(job.urgency);let accepted=false;const offers:DispatchOffer[]=[];
       for(const rankedProvider of ranked.slice(0,maxOffers)){
         const preparedProvider=prepared.find(p=>p.providerId===rankedProvider.providerId)!;
-        const rank=(triedOffers?.length||0)+offers.length+1;
+        const offerRank:number=(triedOffers?.length||0)+offers.length+1;
         const expiresAt=new Date(Date.now()+expirySeconds(job.urgency)*1000).toISOString();
-        const {data:offer,error:offerError}=await supabase.from('job_offers').insert({job_id:job.id,provider_id:preparedProvider.providerId,engineer_id:preparedProvider.engineerId,status:'offered',rank,offer_wave:rank,expires_at:expiresAt,provider_price_pence:preparedProvider.quote.providerPricePence,platform_fee_pence:preparedProvider.quote.platformFeePence,customer_total_pence:preparedProvider.quote.customerTotalPence,currency:'GBP'}).select('id').single();
-        if(offerError){offers.push({providerId:preparedProvider.providerId,status:'offer_failed'});continue}
+        const {data:offer,error:offerError}:{data:{id:string}|null;error:{message?:string}|null}=await supabase.from('job_offers').insert({job_id:job.id,provider_id:preparedProvider.providerId,engineer_id:preparedProvider.engineerId,status:'offered',rank:offerRank,offer_wave:offerRank,expires_at:expiresAt,provider_price_pence:preparedProvider.quote.providerPricePence,platform_fee_pence:preparedProvider.quote.platformFeePence,customer_total_pence:preparedProvider.quote.customerTotalPence,currency:'GBP'}).select('id').single();
+        if(offerError||!offer){offers.push({providerId:preparedProvider.providerId,status:'offer_failed'});continue}
         await supabase.from('jobs').update({status:'offered',quoted_provider_id:preparedProvider.providerId,quoted_engineer_id:preparedProvider.engineerId,provider_price_pence:preparedProvider.quote.providerPricePence,platform_fee_pence:preparedProvider.quote.platformFeePence,customer_total_pence:preparedProvider.quote.customerTotalPence,currency:'GBP',estimated_duration_minutes:preparedProvider.durationMinutes,dispatch_started_at:new Date().toISOString(),last_offer_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id).in('status',['new','offered']);
         offers.push({offerId:offer.id,providerId:preparedProvider.providerId,engineerId:preparedProvider.engineerId,score:rankedProvider.score,expiresAt,quote:preparedProvider.quote,autoAccept:preparedProvider.autoAccept});
         if(preparedProvider.autoAccept){
