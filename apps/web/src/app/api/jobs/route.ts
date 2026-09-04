@@ -1,3 +1,4 @@
+import { createHash,randomBytes } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { classifyElectricalService,electricalVertical } from '@service-business/electrical';
 import { postcodeArea } from '@service-business/platform';
@@ -5,6 +6,7 @@ import { getAdminSupabase, SupabaseConfigurationError } from '@/lib/supabase/adm
 import { formatZodError, jobIntakeSchema } from '@/lib/schemas';
 
 const electricalHazard=/(electric shock|electrocut|smoke|electrical fire|exposed live|live wire|sparking meter|meter fire|supply cable)/i;
+const hashToken=(token:string)=>createHash('sha256').update(token).digest('hex');
 
 export async function POST(request:Request){
   try{
@@ -26,6 +28,7 @@ export async function POST(request:Request){
     }
     const {data:property,error:propertyError}=await supabase.from('properties').insert({address:input.address,postcode:input.postcode,latitude:input.latitude??null,longitude:input.longitude??null}).select('id').single();
     if(propertyError)return NextResponse.json({error:'Unable to create the property record.'},{status:500});
+    const bookingToken=randomBytes(32).toString('base64url');
     const {data:job,error:jobError}=await supabase.from('jobs').insert({
       vertical_id:electricalVertical.id,
       property_id:property.id,
@@ -43,11 +46,12 @@ export async function POST(request:Request){
       schedule_mode:input.scheduleMode,
       requested_start:input.requestedStart||null,
       requested_end:input.requestedEnd||null,
+      customer_access_token_hash:hashToken(bookingToken),
       status:'new'
     }).select('id,status,service_key,schedule_mode,requested_start,requested_end,created_at').single();
     if(jobError)return NextResponse.json({error:'Unable to create the job request.'},{status:500});
     const timing=input.scheduleMode==='asap'?'ASAP':input.scheduleMode==='exact'?'the requested appointment time':'the requested time window';
-    return NextResponse.json({job,bookable:true,area,serviceKey,message:`Request received as ${serviceKey}. This area is live and the job can now enter verified-provider matching for ${timing}.`},{status:201});
+    return NextResponse.json({job,bookingToken,bookable:true,area,serviceKey,message:`Request received as ${serviceKey}. This area is live and the job can now enter verified-provider matching for ${timing}.`},{status:201});
   }catch(error){
     if(error instanceof SupabaseConfigurationError)return NextResponse.json({error:'Bookings are not connected to the production database yet.'},{status:503});
     return NextResponse.json({error:'Unable to process the booking request.'},{status:500});
