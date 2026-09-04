@@ -229,6 +229,16 @@ as $$
 begin
   insert into public.profiles(id,email,display_name)
   values(new.id,new.email,coalesce(new.raw_user_meta_data->>'name',new.email));
+
+  update public.jobs
+  set customer_user_id=new.id
+  where customer_user_id is null and new.email is not null and lower(email)=lower(new.email);
+
+  update public.properties p
+  set owner_user_id=new.id
+  from public.jobs j
+  where p.id=j.property_id and j.customer_user_id=new.id and p.owner_user_id is null;
+
   return new;
 end;
 $$;
@@ -258,22 +268,38 @@ group by p.id,o.id;
 alter table public.profiles enable row level security;
 alter table public.organisations enable row level security;
 alter table public.organisation_members enable row level security;
+alter table public.provider_applications enable row level security;
 alter table public.providers enable row level security;
 alter table public.provider_evidence enable row level security;
 alter table public.provider_services enable row level security;
 alter table public.provider_coverage enable row level security;
+alter table public.service_areas enable row level security;
+alter table public.business_enquiries enable row level security;
+alter table public.academy_interest enable row level security;
 alter table public.properties enable row level security;
 alter table public.jobs enable row level security;
 alter table public.job_offers enable row level security;
+alter table public.coverage_waitlist enable row level security;
 alter table public.reviews enable row level security;
+alter table public.audit_events enable row level security;
 
 create policy "profiles own read" on public.profiles for select using (auth.uid()=id);
 create policy "profiles own update" on public.profiles for update using (auth.uid()=id);
 create policy "members see organisations" on public.organisations for select using (exists(select 1 from public.organisation_members m where m.organisation_id=id and m.user_id=auth.uid()));
 create policy "members see membership" on public.organisation_members for select using (user_id=auth.uid());
+create policy "provider members see provider" on public.providers for select using (exists(select 1 from public.organisation_members m where m.organisation_id=organisation_id and m.user_id=auth.uid()));
+create policy "provider members see evidence" on public.provider_evidence for select using (exists(select 1 from public.providers p join public.organisation_members m on m.organisation_id=p.organisation_id where p.id=provider_id and m.user_id=auth.uid()));
+create policy "provider members see services" on public.provider_services for select using (exists(select 1 from public.providers p join public.organisation_members m on m.organisation_id=p.organisation_id where p.id=provider_id and m.user_id=auth.uid()));
+create policy "provider members see coverage" on public.provider_coverage for select using (exists(select 1 from public.providers p join public.organisation_members m on m.organisation_id=p.organisation_id where p.id=provider_id and m.user_id=auth.uid()));
+create policy "provider members see offers" on public.job_offers for select using (exists(select 1 from public.providers p join public.organisation_members m on m.organisation_id=p.organisation_id where p.id=provider_id and m.user_id=auth.uid()));
 create policy "customer properties" on public.properties for select using (owner_user_id=auth.uid() or exists(select 1 from public.organisation_members m where m.organisation_id=business_organisation_id and m.user_id=auth.uid()));
 create policy "customer jobs" on public.jobs for select using (customer_user_id=auth.uid() or exists(select 1 from public.properties pr join public.organisation_members m on m.organisation_id=pr.business_organisation_id where pr.id=property_id and m.user_id=auth.uid()));
 create policy "customer reviews" on public.reviews for select using (customer_user_id=auth.uid());
 
-grant select on public.public_provider_verification to anon, authenticated;
-grant select on public.service_areas to anon, authenticated;
+revoke all on public.provider_applications from anon, authenticated;
+revoke all on public.business_enquiries from anon, authenticated;
+revoke all on public.academy_interest from anon, authenticated;
+revoke all on public.coverage_waitlist from anon, authenticated;
+revoke all on public.audit_events from anon, authenticated;
+revoke all on public.public_provider_verification from anon, authenticated;
+revoke all on public.service_areas from anon, authenticated;
