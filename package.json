@@ -1,0 +1,11 @@
+{
+  "name": "service-business-platform",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "dev": "pnpm --filter @service-business/web dev",
+    "build": "pnpm --filter @service-business/web build",
+    "lint": "pnpm --filter @service-business/web lint",
+    "typecheck": "pnpm --filter @service-business/web typecheck"
+  }
+}
