@@ -51,15 +51,6 @@ export async function POST(request:Request){
       });
       if(inviteError)invitationError=inviteError.message;
       else invitationSent=true;
-      if(inviteError)await admin.rpc('queue_notification_once',{
-        p_dedupe_key:`engineer.invitation_delivery_failed:${engineer.id}`,
-        p_recipient_user_id:null,
-        p_recipient_email:null,
-        p_channel:'webhook',
-        p_template_key:'engineer.invitation_delivery_failed',
-        p_payload:{engineerId:engineer.id,email:parsed.data.email,error:inviteError.message,organisationId:parsed.data.organisationId},
-        p_scheduled_at:new Date().toISOString()
-      });
     }
     await admin.from('audit_events').insert({actor_user_id:user.id,event_type:'engineer.created',entity_type:'engineer',entity_id:engineer.id,metadata:{organisationId:parsed.data.organisationId,employmentRole:parsed.data.employmentRole,invitationSent,invitationError}});
     return NextResponse.json({engineer,invitationSent,invitationError,message:existingProfile?'Engineer added and linked to their existing login.':invitationSent?'Engineer added and login invitation sent.':'Engineer added, but the login invitation could not be delivered. The record will still link automatically if they sign in with this email.'},{status:201});
