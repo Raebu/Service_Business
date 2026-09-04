@@ -6,6 +6,10 @@
     "dev": "pnpm --filter @service-business/web dev",
     "build": "pnpm --filter @service-business/web build",
     "lint": "pnpm --filter @service-business/web lint",
-    "typecheck": "pnpm --filter @service-business/web typecheck"
+    "typecheck": "pnpm --filter @service-business/web typecheck",
+    "test": "tsx --test packages/platform/src/*.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5"
   }
 }
