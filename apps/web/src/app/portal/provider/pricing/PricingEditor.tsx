@@ -1,0 +1,19 @@
+'use client';
+
+import { FormEvent,useMemo,useState } from 'react';
+
+const toPence=(value:FormDataEntryValue|null)=>Math.round(Number(value||0)*100);
+const format=(pence:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(pence/100);
+
+export function PricingEditor({organisationId}:{organisationId:string}){
+  const[mode,setMode]=useState<'fixed'|'hourly'|'diagnostic'>('fixed');
+  const[message,setMessage]=useState('');const[busy,setBusy]=useState(false);
+  const[lastQuote,setLastQuote]=useState<{providerPricePence:number;platformFeePence:number;customerTotalPence:number;providerReceivesPence:number}|null>(null);
+  const explanation=useMemo(()=>mode==='hourly'?'The customer quote uses the estimated duration you set.':'The fixed provider price is the amount your business receives for the work before any separately disclosed customer service fee.',[mode]);
+  async function submit(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();setBusy(true);setMessage('');const form=new FormData(event.currentTarget);
+    const body={organisationId,serviceKey:String(form.get('serviceKey')||''),pricingMode:mode,fixedPricePence:mode==='hourly'?undefined:toPence(form.get('fixedPrice')),calloutPence:toPence(form.get('callout')),hourlyPence:mode==='hourly'?toPence(form.get('hourlyRate')):undefined,minimumChargePence:toPence(form.get('minimumCharge')),estimatedDurationMinutes:Number(form.get('estimatedDurationMinutes')||0)||undefined,emergencyMultiplier:Number(form.get('emergencyMultiplier')||1),travelChargePence:toPence(form.get('travelCharge'))};
+    const response=await fetch('/api/provider/pricing',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await response.json().catch(()=>({}));setMessage(data.message||data.error||'Unable to save rate.');setLastQuote(response.ok?data.exampleQuote:null);setBusy(false);if(response.ok)setTimeout(()=>window.location.reload(),900);
+  }
+  return <form className='form-card' onSubmit={submit}><h2>Add or update a service price</h2><p className='form-help'>{explanation}</p><div className='form-grid'><label>Service key<input name='serviceKey' required placeholder='e.g. fault-finding'/></label><label>Pricing method<select value={mode} onChange={e=>setMode(e.target.value as typeof mode)}><option value='fixed'>Fixed price</option><option value='hourly'>Hourly</option><option value='diagnostic'>Diagnostic visit</option></select></label>{mode!=='hourly'&&<label>Your fixed price (£)<input name='fixedPrice' type='number' min='0' step='0.01' required/></label>}{mode==='hourly'&&<label>Your hourly rate (£)<input name='hourlyRate' type='number' min='0' step='0.01' required/></label>}<label>Call-out (£)<input name='callout' type='number' min='0' step='0.01' defaultValue='0'/></label><label>Minimum charge (£)<input name='minimumCharge' type='number' min='0' step='0.01' defaultValue='0'/></label><label>Typical duration (minutes)<input name='estimatedDurationMinutes' type='number' min='1' max='1440' defaultValue='60'/></label><label>Emergency multiplier<input name='emergencyMultiplier' type='number' min='1' max='5' step='0.05' defaultValue='1'/></label><label>Flat travel charge (£)<input name='travelCharge' type='number' min='0' step='0.01' defaultValue='0'/></label></div><button className='button primary' disabled={busy}>{busy?'Saving…':'Save transparent price'}</button>{message&&<p className='form-message'>{message}</p>}{lastQuote&&<div className='quote-breakdown'><div><span>Electrician price</span><strong>{format(lastQuote.providerPricePence)}</strong></div><div><span>Customer service fee</span><strong>{format(lastQuote.platformFeePence)}</strong></div><div><span>Customer total</span><strong>{format(lastQuote.customerTotalPence)}</strong></div><div><span>Electrician receives</span><strong>{format(lastQuote.providerReceivesPence)}</strong></div></div>}</form>;
+}
