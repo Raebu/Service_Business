@@ -54,11 +54,21 @@ export async function POST(request:Request){
       }else if(event.type==='charge.dispute.created'){
         const dispute=event.data.object as Stripe.Dispute;const chargeId=typeof dispute.charge==='string'?dispute.charge:dispute.charge?.id;
         if(chargeId){
-          const {data:job}=await supabase.from('jobs').select('id').eq('stripe_charge_id',chargeId).maybeSingle();
+          const {data:job}=await supabase.from('jobs').select('id,provider_price_pence,stripe_transfer_id').eq('stripe_charge_id',chargeId).maybeSingle();
           if(job){
             await supabase.from('jobs').update({payment_status:'disputed',settlement_status:'blocked',dispute_status:dispute.status,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
             await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'dispute',amount_pence:dispute.amount,stripe_object_id:dispute.id,reason:dispute.reason,status:dispute.status});
             await supabase.from('job_cases').insert({job_id:job.id,case_type:'dispute',status:'open',priority:'high',summary:`Stripe dispute ${dispute.id} opened (${dispute.reason||'reason unavailable'}). Settlement automatically blocked.`});
+            if(job.stripe_transfer_id&&job.provider_price_pence){
+              const stripe=getStripeClient();
+              const recoveryAmount=Math.min(Number(job.provider_price_pence),Number(dispute.amount));
+              if(recoveryAmount>0){
+                const reversal=await stripe.transfers.createReversal(job.stripe_transfer_id,{amount:recoveryAmount,metadata:{job_id:job.id,dispute_id:dispute.id}},{idempotencyKey:`service-business:dispute-reversal:${dispute.id}`});
+                await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'transfer_reversal',amount_pence:recoveryAmount,stripe_object_id:reversal.id,reason:`Automatic provider transfer recovery for dispute ${dispute.id}`,status:'recorded'});
+                await supabase.from('jobs').update({settlement_status:'reversed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
+                await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:transfer_reversal:${reversal.id}`,p_source_type:'stripe_transfer_reversal',p_source_id:reversal.id,p_currency:'GBP',p_lines:[{accountCode:'stripe_clearing',direction:'debit',amountPence:recoveryAmount,jobId:job.id},{accountCode:'provider_recovery',direction:'credit',amountPence:recoveryAmount,jobId:job.id}],p_metadata:{disputeId:dispute.id,stripeTransferId:job.stripe_transfer_id}});
+              }
+            }
           }
         }
       }else if(event.type==='charge.refunded'){
