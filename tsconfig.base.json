@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
+      "@/*": ["apps/web/src/*"],
       "@service-business/platform": ["packages/platform/src/index.ts"],
       "@service-business/electrical": ["verticals/electrical/config.ts"]
     }
