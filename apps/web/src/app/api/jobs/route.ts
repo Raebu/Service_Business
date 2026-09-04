@@ -1,6 +1,6 @@
 import { createHash,randomBytes } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { classifyElectricalScope,classifyElectricalService,electricalVertical } from '@service-business/electrical';
+import { classifyElectricalScope,classifyElectricalService,electricalVertical,type ElectricalService } from '@service-business/electrical';
 import { postcodeArea } from '@service-business/platform';
 import { getAdminSupabase, SupabaseConfigurationError } from '@/lib/supabase/admin';
 import { formatZodError, jobIntakeSchema } from '@/lib/schemas';
@@ -16,7 +16,7 @@ export async function POST(request:Request){
     if(electricalHazard.test(input.description)){
       return NextResponse.json({status:'safety_escalation',bookable:false,message:'This description may involve an immediate electrical hazard. Do not attempt repairs or touch exposed electrical equipment. Move away from the hazard and contact the appropriate emergency or electricity-network service.'},{status:422});
     }
-    const serviceKey=input.serviceKey||classifyElectricalService(input.description);
+    const serviceKey=(input.serviceKey||classifyElectricalService(input.description)) as ElectricalService;
     const scope=classifyElectricalScope(input.description,serviceKey);
     const area=postcodeArea(input.postcode);
     const supabase=getAdminSupabase();
