@@ -1,0 +1,7 @@
+import { notFound } from 'next/navigation';
+const content:Record<string,{title:string;copy:string;items:string[]}>= {
+ education:{title:'Give learners a clearer route into industry.',copy:'Connect electrical courses with participating employers, placements and local skills demand.',items:['Employer engagement','Placement opportunities','Apprenticeship introductions','Industry talks and mentoring','Progression evidence']},
+ learners:{title:'Build your path into electrical work.',copy:'Create a route from training to placement, apprenticeship and future verified-network employment.',items:['Local employer discovery','Placement opportunities','Apprenticeship matching','Career resources','Portable progression profile']},
+ employers:{title:'Find and develop future electrical talent.',copy:'Help grow the workforce in your area while creating a stronger recruitment pipeline for your own business.',items:['Apprentice matching','Work-experience placements','Mentoring','College relationships','Coverage-gap talent alerts']}
+};
+export default async function AcademySegmentPage({params}:{params:Promise<{segment:string}>}){const {segment}=await params;const c=content[segment];if(!c)notFound();return <section className='page narrow'><span className='eyebrow'>Training & careers</span><h1>{c.title}</h1><p className='lede'>{c.copy}</p><div className='panel'><h2>What this route can provide</h2><ul>{c.items.map(x=><li key={x}>{x}</li>)}</ul><button className='button primary'>Register interest</button></div></section>}

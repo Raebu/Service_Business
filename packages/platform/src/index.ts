@@ -25,3 +25,5 @@ export function calculateAreaReadiness(area:string,verifiedProviders:number,fill
 export function canPubliclyClaimNationalCoverage(totalVerifiedBusinesses:number,thresholds:LaunchThresholds,areas:AreaReadiness[]):boolean{
   return totalVerifiedBusinesses>=thresholds.minimumVerifiedBusinesses&&areas.length>0&&areas.every(a=>a.status==='live');
 }
+
+export * from './verification';

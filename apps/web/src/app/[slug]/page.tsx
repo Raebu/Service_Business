@@ -1,0 +1,10 @@
+import { notFound } from 'next/navigation';
+const pages:Record<string,{eyebrow:string;title:string;copy:string;items?:string[]}>= {
+ security:{eyebrow:'Trust centre',title:'Security is part of the service.',copy:'The production platform will document identity, access controls, secret management, auditability, incident response, dependency risk and service resilience.',items:['Least-privilege access','Encrypted secret storage','Audit trails','Incident response','Dependency monitoring']},
+ compliance:{eyebrow:'Trust centre',title:'Compliance lives in the product, not in a PDF drawer.',copy:'Each vertical defines its own evidence, expiry, safety and regulatory controls while the platform enforces common lifecycle rules.',items:['Evidence-backed verification','Expiry monitoring','Safety escalation','Complaints and dispute handling','Procurement evidence']},
+ privacy:{eyebrow:'Legal',title:'Privacy',copy:'A full privacy notice will be published before production launch, covering customers, providers, business clients, learners and outreach data.'},
+ terms:{eyebrow:'Legal',title:'Terms',copy:'Separate customer, provider and business terms will define the managed-service relationship, responsibilities, cancellations, payment and dispute processes.'},
+ accessibility:{eyebrow:'Trust centre',title:'Accessibility',copy:'The production experience should target WCAG 2.2 AA and make booking, account and support journeys usable with assistive technologies.'},
+ complaints:{eyebrow:'Support',title:'Complaints and service recovery',copy:'Customers and providers need a clear route for complaints, rework, escalation and resolution. The production workflow will track ownership and service-level deadlines.'}
+};
+export default async function InfoPage({params}:{params:Promise<{slug:string}>}){const {slug}=await params;const c=pages[slug];if(!c)notFound();return <section className='page narrow'><span className='eyebrow'>{c.eyebrow}</span><h1>{c.title}</h1><p className='lede'>{c.copy}</p>{c.items&&<div className='panel'><ul>{c.items.map(x=><li key={x}>{x}</li>)}</ul></div>}</section>}
