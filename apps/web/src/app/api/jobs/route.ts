@@ -23,7 +23,7 @@ export async function POST(request:Request){
       if(waitlistError)return NextResponse.json({error:'Unable to record your coverage request.'},{status:500});
       return NextResponse.json({status:'coverage_waitlist',bookable:false,area,message:'We are still building verified electrician coverage in your area. Your request has been recorded so local demand can drive provider recruitment.'},{status:202});
     }
-    const {data:property,error:propertyError}=await supabase.from('properties').insert({address:input.address,postcode:input.postcode}).select('id').single();
+    const {data:property,error:propertyError}=await supabase.from('properties').insert({address:input.address,postcode:input.postcode,latitude:input.latitude??null,longitude:input.longitude??null}).select('id').single();
     if(propertyError)return NextResponse.json({error:'Unable to create the property record.'},{status:500});
     const {data:job,error:jobError}=await supabase.from('jobs').insert({
       vertical_id:electricalVertical.id,
@@ -37,10 +37,16 @@ export async function POST(request:Request){
       urgency:input.urgency,
       preferred_window:input.preferredWindow||null,
       service_key:input.serviceKey||null,
+      latitude:input.latitude??null,
+      longitude:input.longitude??null,
+      schedule_mode:input.scheduleMode,
+      requested_start:input.requestedStart||null,
+      requested_end:input.requestedEnd||null,
       status:'new'
-    }).select('id,status,created_at').single();
+    }).select('id,status,schedule_mode,requested_start,requested_end,created_at').single();
     if(jobError)return NextResponse.json({error:'Unable to create the job request.'},{status:500});
-    return NextResponse.json({job,bookable:true,area,message:'Request received. This area is live and the job can now enter verified-provider matching.'},{status:201});
+    const timing=input.scheduleMode==='asap'?'ASAP':input.scheduleMode==='exact'?'the requested appointment time':'the requested time window';
+    return NextResponse.json({job,bookable:true,area,message:`Request received. This area is live and the job can now enter verified-provider matching for ${timing}.`},{status:201});
   }catch(error){
     if(error instanceof SupabaseConfigurationError)return NextResponse.json({error:'Bookings are not connected to the production database yet.'},{status:503});
     return NextResponse.json({error:'Unable to process the booking request.'},{status:500});
