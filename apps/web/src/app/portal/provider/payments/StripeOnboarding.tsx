@@ -2,7 +2,7 @@
 
 import { useMemo,useState } from 'react';
 import { loadConnectAndInitialize } from '@stripe/connect-js';
-import { ConnectAccountOnboarding,ConnectComponentsProvider } from '@stripe/react-connect-js';
+import { ConnectAccountManagement,ConnectAccountOnboarding,ConnectComponentsProvider,ConnectNotificationBanner } from '@stripe/react-connect-js';
 
 export function StripeOnboarding({organisationId}:{organisationId:string}){
   const[message,setMessage]=useState('');
@@ -26,10 +26,12 @@ export function StripeOnboarding({organisationId}:{organisationId:string}){
 
   if(!publishableKey)return <p className='note'>Stripe publishable-key configuration is required before embedded onboarding can be displayed.</p>;
   return <div className='portal-card'>
-    <h2>Payment onboarding</h2>
-    <p>Complete Stripe verification here without a separate provider dashboard. The platform keeps payout, refund and dispute operations inside your business account.</p>
+    <h2>Payments & verification</h2>
+    <p>Complete Stripe verification and ongoing account requirements here without a separate provider dashboard. Outstanding compliance actions appear automatically.</p>
     <ConnectComponentsProvider connectInstance={connectInstance}>
+      <ConnectNotificationBanner/>
       <ConnectAccountOnboarding onExit={sync}/>
+      <details><summary>Manage payment account details</summary><ConnectAccountManagement/></details>
     </ConnectComponentsProvider>
     {message&&<p className='form-message' role='status'>{message}</p>}
     <button className='button' type='button' onClick={sync}>Refresh payout status</button>
