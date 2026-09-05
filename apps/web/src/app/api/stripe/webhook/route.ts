@@ -10,6 +10,19 @@ async function markReceipt(eventId:string,status:'processed'|'failed'|'ignored',
   await supabase.from('stripe_event_receipts').update({processing_status:status,error_message:errorMessage||null,processed_at:new Date().toISOString()}).eq('event_id',eventId);
 }
 
+async function syncCorporateInvoice(invoice:Stripe.Invoice,eventType:string){
+  const runId=invoice.metadata?.invoice_run_id;if(!runId)return false;
+  const db=getAdminSupabase();const now=new Date().toISOString();
+  const patch:Record<string,unknown>={stripe_invoice_id:invoice.id,stripe_invoice_status:invoice.status||eventType,hosted_invoice_url:invoice.hosted_invoice_url||null,invoice_pdf_url:invoice.invoice_pdf||null,stripe_updated_at:now};
+  if(eventType==='invoice.finalized'||eventType==='invoice.sent'){patch.status='issued';patch.issued_at=now;patch.exception_reason=null}
+  if(eventType==='invoice.paid'){patch.status='paid';patch.paid_at=now;patch.exception_reason=null}
+  if(eventType==='invoice.payment_failed'){patch.status='issued';patch.exception_reason='Stripe reported an invoice payment failure.'}
+  if(eventType==='invoice.voided'){patch.status='cancelled'}
+  await db.from('corporate_invoice_runs').update(patch).eq('id',runId).eq('stripe_invoice_id',invoice.id);
+  await db.from('audit_events').insert({event_type:`stripe.${eventType.replaceAll('.','_')}`,entity_type:'corporate_invoice_run',entity_id:runId,metadata:{stripeInvoiceId:invoice.id,status:invoice.status,amountDue:invoice.amount_due,amountPaid:invoice.amount_paid}});
+  return true;
+}
+
 export async function POST(request:Request){
   const signature=request.headers.get('stripe-signature');
   const secret=process.env.STRIPE_WEBHOOK_SECRET;
@@ -71,6 +84,9 @@ export async function POST(request:Request){
             }
           }
         }
+      }else if(event.type==='charge.dispute.updated'||event.type==='charge.dispute.closed'){
+        const dispute=event.data.object as Stripe.Dispute;const chargeId=typeof dispute.charge==='string'?dispute.charge:dispute.charge?.id;
+        if(chargeId){const {data:job}=await supabase.from('jobs').select('id').eq('stripe_charge_id',chargeId).maybeSingle();if(job){await supabase.from('jobs').update({dispute_status:dispute.status,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);await supabase.from('payment_adjustments').update({status:dispute.status}).eq('job_id',job.id).eq('stripe_object_id',dispute.id).eq('adjustment_type','dispute');await supabase.from('audit_events').insert({event_type:`stripe.dispute_${event.type.endsWith('closed')?'closed':'updated'}`,entity_type:'job',entity_id:job.id,metadata:{disputeId:dispute.id,status:dispute.status,reason:dispute.reason}})}}
       }else if(event.type==='charge.refunded'){
         const charge=event.data.object as Stripe.Charge;
         const {data:job}=await supabase.from('jobs').select('id,customer_total_pence').eq('stripe_charge_id',charge.id).maybeSingle();
@@ -83,6 +99,8 @@ export async function POST(request:Request){
         const transfer=event.data.object as Stripe.Transfer;
         const {data:job}=await supabase.from('jobs').select('id').eq('stripe_transfer_id',transfer.id).maybeSingle();
         if(job)await supabase.from('jobs').update({settlement_status:'reversed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
+      }else if(event.type==='invoice.finalized'||event.type==='invoice.sent'||event.type==='invoice.paid'||event.type==='invoice.payment_failed'||event.type==='invoice.voided'){
+        const handled=await syncCorporateInvoice(event.data.object as Stripe.Invoice,event.type);if(!handled){await markReceipt(event.id,'ignored');return NextResponse.json({received:true,ignored:true})}
       }else{
         await markReceipt(event.id,'ignored');return NextResponse.json({received:true,ignored:true});
       }
