@@ -37,7 +37,11 @@ export async function POST(request:Request){
     const stripe=getStripeClient();
     const session=await stripe.accountSessions.create({
       account:accountId,
-      components:{account_onboarding:{enabled:true}}
+      components:{
+        account_onboarding:{enabled:true},
+        account_management:{enabled:true},
+        notification_banner:{enabled:true}
+      }
     });
     return NextResponse.json({clientSecret:session.client_secret,accountId});
   }catch(error){
