@@ -21,7 +21,7 @@ export function BusinessSetupWizard(){
    let sole=0,limited=0,professional=false;
    for(const item of scenarios){const answer=answers[item.key];if(answer!=='yes')continue;if(item.key==='admin')sole+=2;else if(['staff','separation','sale','contracts'].includes(item.key))limited+=2;if(item.professional)professional=true;}
    if(!Object.keys(answers).length)return null;
-   const direction=limited>=sole+2?'limited_company':sole>=limited+2?'sole_trader':'undecided';
+   const direction:Structure=limited>=sole+2?'limited_company':sole>=limited+2?'sole_trader':'undecided';
    return{direction,professional,sole,limited};
  },[answers]);
  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setResult('');const form=new FormData(e.currentTarget);const body={applicantName:String(form.get('name')||''),email:String(form.get('email')||''),qualificationSummary:String(form.get('qualification')||''),desiredStructure:structure,companyNameChoice:String(form.get('companyName')||'')||undefined,explicitFilingConsent:form.get('filingConsent')==='on',decisionContext:{answers,assessment}};const res=await fetch('/api/business-setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await res.json();setResult(res.ok?`${data.message} Case ${data.id}.`:(data.error||'Unable to start setup.'));setBusy(false)}
