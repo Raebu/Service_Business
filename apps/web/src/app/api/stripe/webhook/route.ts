@@ -23,6 +23,39 @@ async function syncCorporateInvoice(invoice:Stripe.Invoice,eventType:string){
   return true;
 }
 
+async function syncFollowOnCheckout(session:Stripe.Checkout.Session,eventType:string){
+  if(session.metadata?.payment_kind!=='follow_on_quote')return false;
+  const quoteId=session.metadata?.follow_on_quote_id;const jobId=session.metadata?.job_id;if(!quoteId||!jobId)return true;
+  const db=getAdminSupabase();const now=new Date().toISOString();
+  const paymentIntent=typeof session.payment_intent==='string'?session.payment_intent:session.payment_intent?.id||null;
+  if(eventType==='checkout.session.async_payment_failed'){
+    await db.from('follow_on_quotes').update({stripe_payment_intent_id:paymentIntent,payment_status:'failed',settlement_status:'not_ready',payment_updated_at:now}).eq('id',quoteId).eq('job_id',jobId);
+  }else{
+    const paid=eventType==='checkout.session.async_payment_succeeded'||session.payment_status==='paid';
+    await db.from('follow_on_quotes').update({stripe_payment_intent_id:paymentIntent,payment_status:paid?'paid':'processing',paid_at:paid?now:null,settlement_status:paid?'held':'not_ready',payment_updated_at:now}).eq('id',quoteId).eq('job_id',jobId);
+  }
+  await db.from('audit_events').insert({event_type:`follow_on_quote.${eventType.replaceAll('.','_')}`,entity_type:'job',entity_id:jobId,metadata:{quoteId,checkoutSessionId:session.id,paymentIntentId:paymentIntent,paymentStatus:session.payment_status}});
+  return true;
+}
+
+async function syncFollowOnPaymentIntent(intent:Stripe.PaymentIntent,eventType:'succeeded'|'failed'){
+  if(intent.metadata?.payment_kind!=='follow_on_quote')return false;
+  const quoteId=intent.metadata?.follow_on_quote_id;const jobId=intent.metadata?.job_id;if(!quoteId||!jobId)return true;
+  const db=getAdminSupabase();const now=new Date().toISOString();
+  if(eventType==='failed'){
+    await db.from('follow_on_quotes').update({stripe_payment_intent_id:intent.id,payment_status:'failed',settlement_status:'not_ready',payment_updated_at:now}).eq('id',quoteId).eq('job_id',jobId);
+    return true;
+  }
+  const chargeId=typeof intent.latest_charge==='string'?intent.latest_charge:intent.latest_charge?.id||null;
+  const {data:quote}=await db.from('follow_on_quotes').select('provider_id,provider_price_pence,platform_fee_pence,customer_total_pence').eq('id',quoteId).eq('job_id',jobId).maybeSingle();
+  await db.from('follow_on_quotes').update({stripe_payment_intent_id:intent.id,stripe_charge_id:chargeId,payment_status:'paid',paid_at:now,settlement_status:'held',payment_updated_at:now}).eq('id',quoteId).eq('job_id',jobId);
+  if(quote?.provider_price_pence&&quote.platform_fee_pence!=null&&quote.customer_total_pence){
+    await db.rpc('post_finance_journal',{p_idempotency_key:`stripe:follow_on_payment:${intent.id}`,p_source_type:'stripe_follow_on_payment',p_source_id:intent.id,p_currency:'GBP',p_lines:[{accountCode:'stripe_clearing',direction:'debit',amountPence:Number(quote.customer_total_pence),jobId,providerId:quote.provider_id},{accountCode:'provider_payable',direction:'credit',amountPence:Number(quote.provider_price_pence),jobId,providerId:quote.provider_id},{accountCode:'platform_service_revenue',direction:'credit',amountPence:Number(quote.platform_fee_pence),jobId}],p_metadata:{followOnQuoteId:quoteId,stripePaymentIntentId:intent.id,stripeChargeId:chargeId}});
+  }
+  await db.from('audit_events').insert({event_type:'follow_on_quote.payment_succeeded',entity_type:'job',entity_id:jobId,metadata:{quoteId,stripePaymentIntentId:intent.id,stripeChargeId:chargeId}});
+  return true;
+}
+
 export async function POST(request:Request){
   const signature=request.headers.get('stripe-signature');
   const secret=process.env.STRIPE_WEBHOOK_SECRET;
@@ -43,16 +76,20 @@ export async function POST(request:Request){
     try{
       if(event.type==='checkout.session.completed'||event.type==='checkout.session.async_payment_succeeded'){
         const session=event.data.object as Stripe.Checkout.Session;
+        if(await syncFollowOnCheckout(session,event.type)){await markReceipt(event.id,'processed');return NextResponse.json({received:true})}
         const jobId=session.metadata?.job_id;
         if(!jobId){await markReceipt(event.id,'ignored');return NextResponse.json({received:true})}
         const paymentIntent=typeof session.payment_intent==='string'?session.payment_intent:session.payment_intent?.id||null;
         const paid=event.type==='checkout.session.async_payment_succeeded'||session.payment_status==='paid';
         await supabase.from('jobs').update({stripe_payment_intent_id:paymentIntent,payment_status:paid?'paid':'processing',paid_at:paid?new Date().toISOString():null,settlement_status:paid?'held':'not_ready',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jobId);
       }else if(event.type==='checkout.session.async_payment_failed'){
-        const session=event.data.object as Stripe.Checkout.Session;const jobId=session.metadata?.job_id;
-        if(jobId)await supabase.from('jobs').update({payment_status:'failed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jobId);
+        const session=event.data.object as Stripe.Checkout.Session;
+        if(await syncFollowOnCheckout(session,event.type)){await markReceipt(event.id,'processed');return NextResponse.json({received:true})}
+        const jobId=session.metadata?.job_id;if(jobId)await supabase.from('jobs').update({payment_status:'failed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jobId);
       }else if(event.type==='payment_intent.succeeded'){
-        const intent=event.data.object as Stripe.PaymentIntent;const jobId=intent.metadata?.job_id;
+        const intent=event.data.object as Stripe.PaymentIntent;
+        if(await syncFollowOnPaymentIntent(intent,'succeeded')){await markReceipt(event.id,'processed');return NextResponse.json({received:true})}
+        const jobId=intent.metadata?.job_id;
         if(jobId){
           const chargeId=typeof intent.latest_charge==='string'?intent.latest_charge:intent.latest_charge?.id||null;
           const {data:job}=await supabase.from('jobs').select('provider_price_pence,platform_fee_pence,customer_total_pence,matched_provider_id').eq('id',jobId).maybeSingle();
@@ -62,43 +99,38 @@ export async function POST(request:Request){
           }
         }
       }else if(event.type==='payment_intent.payment_failed'){
-        const intent=event.data.object as Stripe.PaymentIntent;const jobId=intent.metadata?.job_id;
-        if(jobId)await supabase.from('jobs').update({stripe_payment_intent_id:intent.id,payment_status:'failed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jobId);
+        const intent=event.data.object as Stripe.PaymentIntent;
+        if(await syncFollowOnPaymentIntent(intent,'failed')){await markReceipt(event.id,'processed');return NextResponse.json({received:true})}
+        const jobId=intent.metadata?.job_id;if(jobId)await supabase.from('jobs').update({stripe_payment_intent_id:intent.id,payment_status:'failed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jobId);
       }else if(event.type==='charge.dispute.created'){
         const dispute=event.data.object as Stripe.Dispute;const chargeId=typeof dispute.charge==='string'?dispute.charge:dispute.charge?.id;
         if(chargeId){
-          const {data:job}=await supabase.from('jobs').select('id,provider_price_pence,stripe_transfer_id').eq('stripe_charge_id',chargeId).maybeSingle();
-          if(job){
-            await supabase.from('jobs').update({payment_status:'disputed',settlement_status:'blocked',dispute_status:dispute.status,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
-            await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'dispute',amount_pence:dispute.amount,stripe_object_id:dispute.id,reason:dispute.reason,status:dispute.status});
-            await supabase.from('job_cases').insert({job_id:job.id,case_type:'dispute',status:'open',priority:'high',summary:`Stripe dispute ${dispute.id} opened (${dispute.reason||'reason unavailable'}). Settlement automatically blocked.`});
-            if(job.stripe_transfer_id&&job.provider_price_pence){
-              const stripe=getStripeClient();
-              const recoveryAmount=Math.min(Number(job.provider_price_pence),Number(dispute.amount));
-              if(recoveryAmount>0){
-                const reversal=await stripe.transfers.createReversal(job.stripe_transfer_id,{amount:recoveryAmount,metadata:{job_id:job.id,dispute_id:dispute.id}},{idempotencyKey:`service-business:dispute-reversal:${dispute.id}`});
-                await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'transfer_reversal',amount_pence:recoveryAmount,stripe_object_id:reversal.id,reason:`Automatic provider transfer recovery for dispute ${dispute.id}`,status:'recorded'});
-                await supabase.from('jobs').update({settlement_status:'reversed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
-                await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:transfer_reversal:${reversal.id}`,p_source_type:'stripe_transfer_reversal',p_source_id:reversal.id,p_currency:'GBP',p_lines:[{accountCode:'stripe_clearing',direction:'debit',amountPence:recoveryAmount,jobId:job.id},{accountCode:'provider_recovery',direction:'credit',amountPence:recoveryAmount,jobId:job.id}],p_metadata:{disputeId:dispute.id,stripeTransferId:job.stripe_transfer_id}});
-              }
+          const {data:followOn}=await supabase.from('follow_on_quotes').select('id,job_id,provider_price_pence,stripe_transfer_id').eq('stripe_charge_id',chargeId).maybeSingle();
+          if(followOn){
+            await supabase.from('follow_on_quotes').update({settlement_status:'blocked',payment_updated_at:new Date().toISOString()}).eq('id',followOn.id);
+            await supabase.from('job_cases').insert({job_id:followOn.job_id,case_type:'dispute',status:'open',priority:'high',summary:`Stripe dispute ${dispute.id} opened for approved additional work. Settlement automatically blocked.`});
+            if(followOn.stripe_transfer_id&&followOn.provider_price_pence){const stripe=getStripeClient();const recoveryAmount=Math.min(Number(followOn.provider_price_pence),Number(dispute.amount));if(recoveryAmount>0){const reversal=await stripe.transfers.createReversal(followOn.stripe_transfer_id,{amount:recoveryAmount,metadata:{job_id:followOn.job_id,follow_on_quote_id:followOn.id,dispute_id:dispute.id}},{idempotencyKey:`service-business:follow-on-dispute-reversal:${dispute.id}`});await supabase.from('follow_on_quotes').update({settlement_status:'reversed'}).eq('id',followOn.id);await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:follow_on_transfer_reversal:${reversal.id}`,p_source_type:'stripe_follow_on_transfer_reversal',p_source_id:reversal.id,p_currency:'GBP',p_lines:[{accountCode:'stripe_clearing',direction:'debit',amountPence:recoveryAmount,jobId:followOn.job_id},{accountCode:'provider_recovery',direction:'credit',amountPence:recoveryAmount,jobId:followOn.job_id}],p_metadata:{followOnQuoteId:followOn.id,disputeId:dispute.id,stripeTransferId:followOn.stripe_transfer_id}})}}
+          }else{
+            const {data:job}=await supabase.from('jobs').select('id,provider_price_pence,stripe_transfer_id').eq('stripe_charge_id',chargeId).maybeSingle();
+            if(job){
+              await supabase.from('jobs').update({payment_status:'disputed',settlement_status:'blocked',dispute_status:dispute.status,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
+              await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'dispute',amount_pence:dispute.amount,stripe_object_id:dispute.id,reason:dispute.reason,status:dispute.status});
+              await supabase.from('job_cases').insert({job_id:job.id,case_type:'dispute',status:'open',priority:'high',summary:`Stripe dispute ${dispute.id} opened (${dispute.reason||'reason unavailable'}). Settlement automatically blocked.`});
+              if(job.stripe_transfer_id&&job.provider_price_pence){const stripe=getStripeClient();const recoveryAmount=Math.min(Number(job.provider_price_pence),Number(dispute.amount));if(recoveryAmount>0){const reversal=await stripe.transfers.createReversal(job.stripe_transfer_id,{amount:recoveryAmount,metadata:{job_id:job.id,dispute_id:dispute.id}},{idempotencyKey:`service-business:dispute-reversal:${dispute.id}`});await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'transfer_reversal',amount_pence:recoveryAmount,stripe_object_id:reversal.id,reason:`Automatic provider transfer recovery for dispute ${dispute.id}`,status:'recorded'});await supabase.from('jobs').update({settlement_status:'reversed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:transfer_reversal:${reversal.id}`,p_source_type:'stripe_transfer_reversal',p_source_id:reversal.id,p_currency:'GBP',p_lines:[{accountCode:'stripe_clearing',direction:'debit',amountPence:recoveryAmount,jobId:job.id},{accountCode:'provider_recovery',direction:'credit',amountPence:recoveryAmount,jobId:job.id}],p_metadata:{disputeId:dispute.id,stripeTransferId:job.stripe_transfer_id}})}}
             }
           }
         }
       }else if(event.type==='charge.dispute.updated'||event.type==='charge.dispute.closed'){
         const dispute=event.data.object as Stripe.Dispute;const chargeId=typeof dispute.charge==='string'?dispute.charge:dispute.charge?.id;
-        if(chargeId){const {data:job}=await supabase.from('jobs').select('id').eq('stripe_charge_id',chargeId).maybeSingle();if(job){await supabase.from('jobs').update({dispute_status:dispute.status,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);await supabase.from('payment_adjustments').update({status:dispute.status}).eq('job_id',job.id).eq('stripe_object_id',dispute.id).eq('adjustment_type','dispute');await supabase.from('audit_events').insert({event_type:`stripe.dispute_${event.type.endsWith('closed')?'closed':'updated'}`,entity_type:'job',entity_id:job.id,metadata:{disputeId:dispute.id,status:dispute.status,reason:dispute.reason}})}}
+        if(chargeId){const {data:job}=await supabase.from('jobs').select('id').eq('stripe_charge_id',chargeId).maybeSingle();if(job){await supabase.from('jobs').update({dispute_status:dispute.status,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);await supabase.from('payment_adjustments').update({status:dispute.status}).eq('job_id',job.id).eq('stripe_object_id',dispute.id).eq('adjustment_type','dispute');await supabase.from('audit_events').insert({event_type:`stripe.dispute_${event.type.endsWith('closed')?'closed':'updated'}`,entity_type:'job',entity_id:job.id,metadata:{disputeId:dispute.id,status:dispute.status,reason:dispute.reason}})}else{const {data:quote}=await supabase.from('follow_on_quotes').select('id,job_id').eq('stripe_charge_id',chargeId).maybeSingle();if(quote)await supabase.from('audit_events').insert({event_type:`stripe.follow_on_dispute_${event.type.endsWith('closed')?'closed':'updated'}`,entity_type:'job',entity_id:quote.job_id,metadata:{quoteId:quote.id,disputeId:dispute.id,status:dispute.status,reason:dispute.reason}})}}
       }else if(event.type==='charge.refunded'){
         const charge=event.data.object as Stripe.Charge;
-        const {data:job}=await supabase.from('jobs').select('id,customer_total_pence').eq('stripe_charge_id',charge.id).maybeSingle();
-        if(job){
-          const refunded=Number(charge.amount_refunded||0);const full=refunded>=Number(job.customer_total_pence||charge.amount);
-          await supabase.from('jobs').update({refunded_pence:refunded,payment_status:full?'refunded':'partially_refunded',settlement_status:'blocked',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
-          if(refunded>0)await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'refund',amount_pence:refunded,stripe_object_id:charge.id,reason:'Stripe refund recorded',status:full?'refunded':'partially_refunded'});
-        }
+        const {data:followOn}=await supabase.from('follow_on_quotes').select('id,job_id,customer_total_pence').eq('stripe_charge_id',charge.id).maybeSingle();
+        if(followOn){const refunded=Number(charge.amount_refunded||0);const full=refunded>=Number(followOn.customer_total_pence||charge.amount);await supabase.from('follow_on_quotes').update({refunded_pence:refunded,payment_status:full?'refunded':'partially_refunded',settlement_status:'blocked',payment_updated_at:new Date().toISOString()}).eq('id',followOn.id);await supabase.from('audit_events').insert({event_type:'follow_on_quote.refund_recorded',entity_type:'job',entity_id:followOn.job_id,metadata:{quoteId:followOn.id,stripeChargeId:charge.id,refundedPence:refunded,full}})}else{const {data:job}=await supabase.from('jobs').select('id,customer_total_pence').eq('stripe_charge_id',charge.id).maybeSingle();if(job){const refunded=Number(charge.amount_refunded||0);const full=refunded>=Number(job.customer_total_pence||charge.amount);await supabase.from('jobs').update({refunded_pence:refunded,payment_status:full?'refunded':'partially_refunded',settlement_status:'blocked',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);if(refunded>0)await supabase.from('payment_adjustments').insert({job_id:job.id,adjustment_type:'refund',amount_pence:refunded,stripe_object_id:charge.id,reason:'Stripe refund recorded',status:full?'refunded':'partially_refunded'})}}
       }else if(event.type==='transfer.reversed'){
         const transfer=event.data.object as Stripe.Transfer;
         const {data:job}=await supabase.from('jobs').select('id').eq('stripe_transfer_id',transfer.id).maybeSingle();
-        if(job)await supabase.from('jobs').update({settlement_status:'reversed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
+        if(job)await supabase.from('jobs').update({settlement_status:'reversed',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);else{const {data:quote}=await supabase.from('follow_on_quotes').select('id').eq('stripe_transfer_id',transfer.id).maybeSingle();if(quote)await supabase.from('follow_on_quotes').update({settlement_status:'reversed',payment_updated_at:new Date().toISOString()}).eq('id',quote.id)}
       }else if(event.type==='invoice.finalized'||event.type==='invoice.sent'||event.type==='invoice.paid'||event.type==='invoice.payment_failed'||event.type==='invoice.voided'){
         const handled=await syncCorporateInvoice(event.data.object as Stripe.Invoice,event.type);if(!handled){await markReceipt(event.id,'ignored');return NextResponse.json({received:true,ignored:true})}
       }else{
