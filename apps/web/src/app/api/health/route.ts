@@ -5,7 +5,6 @@ export const dynamic='force-dynamic';
 
 const required=[
   'NEXT_PUBLIC_SUPABASE_URL',
-  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
   'CRON_SECRET',
   'NEXT_PUBLIC_SITE_URL',
@@ -25,11 +24,13 @@ const optional=[
 ] as const;
 
 export async function GET(){
-  const missingRequired=required.filter(key=>!process.env[key]);
+  const supabasePublicKey=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const missingRequired:string[]=[...required.filter(key=>!process.env[key])];
+  if(!supabasePublicKey)missingRequired.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY_OR_ANON_KEY');
   const configuredOptional=optional.filter(key=>Boolean(process.env[key]));
   const capabilities={
     database:Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY),
-    auth:Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    auth:Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&supabasePublicKey),
     payments:Boolean(process.env.STRIPE_SECRET_KEY&&process.env.STRIPE_WEBHOOK_SECRET&&process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),
     workers:Boolean(process.env.CRON_SECRET),
     email:Boolean(process.env.RESEND_API_KEY&&process.env.NOTIFICATION_FROM_EMAIL),
