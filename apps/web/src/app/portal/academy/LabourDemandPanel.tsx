@@ -1,0 +1,9 @@
+import { getAdminSupabase } from '@/lib/supabase/admin';
+
+export async function LabourDemandPanel(){
+  const db=getAdminSupabase();
+  const {data:latest}=await db.from('labour_demand_snapshots').select('measured_on').order('measured_on',{ascending:false}).limit(1).maybeSingle();
+  if(!latest?.measured_on)return <section className='portal-card'><h2>Local labour demand</h2><p>No labour-demand snapshot has been generated yet. The daily intelligence worker will populate this from marketplace demand and verified-provider depth.</p></section>;
+  const {data:rows}=await db.from('labour_demand_snapshots').select('area,service_key,demand_count,verified_provider_count,open_training_opportunities,shortage_score,trend,source_window_days').eq('measured_on',latest.measured_on).order('shortage_score',{ascending:false}).limit(20);
+  return <section className='portal-card'><div className='record-row'><div><h2>Local labour demand</h2><span>Latest snapshot {latest.measured_on} · evidence window {(rows?.[0]?.source_window_days||30)} days</span></div><span className='status-pill'>live aggregate</span></div>{!rows?.length?<p>No shortage signals were produced for the latest snapshot.</p>:<div className='schedule-summary'>{rows.map((row,index)=><span key={`${row.area}:${row.service_key}`}><strong>#{index+1} {row.area} · {row.service_key}</strong> · shortage {Number(row.shortage_score).toFixed(1)} · {row.trend} · demand {row.demand_count} · verified providers {row.verified_provider_count} · training opportunities {row.open_training_opportunities}</span>)}</div>}<p className='form-help'>This is marketplace planning intelligence, not a guarantee of employment or a qualification recommendation. Higher shortage scores reflect observed demand pressure relative to verified supply and current training opportunities.</p></section>;
+}
