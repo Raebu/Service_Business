@@ -33,3 +33,15 @@ export function EvidenceActions({evidenceId}:{evidenceId:string}){
   async function openFile(){setBusy(true);const res=await fetch(`/api/admin/evidence/${evidenceId}`);const data=await res.json().catch(()=>({}));setBusy(false);if(res.ok&&data.url)window.open(data.url,'_blank','noopener,noreferrer');else setMessage(data.error||'No file available.');}
   return <div className='inline-actions'><button className='button' disabled={busy} onClick={openFile}>View file</button><button className='button' disabled={busy} onClick={()=>decide('verified')}>Verify</button><button className='button danger' disabled={busy} onClick={()=>decide('rejected')}>Reject</button>{message&&<small>{message}</small>}</div>;
 }
+
+export function FinanceExceptionActions({exceptionId}:{exceptionId:string}){
+  const [busy,setBusy]=useState(false);const [message,setMessage]=useState('');
+  async function finalise(status:'resolved'|'ignored'){
+    const reason=window.prompt(status==='resolved'?'Resolution reason / evidence':'Why is this exception safe to ignore?');
+    if(!reason||reason.trim().length<3)return;
+    setBusy(true);setMessage('');
+    const res=await fetch(`/api/admin/finance/reconciliation-exceptions/${exceptionId}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status,reason})});
+    const data=await res.json().catch(()=>({}));setMessage(res.ok?(data.message||'Finance exception updated.'):data.error||'Unable to update finance exception.');setBusy(false);if(res.ok)window.location.reload();
+  }
+  return <div className='inline-actions'><button className='button' disabled={busy} onClick={()=>finalise('resolved')}>Mark resolved</button><button className='button danger' disabled={busy} onClick={()=>finalise('ignored')}>Ignore with reason</button>{message&&<small>{message}</small>}</div>;
+}
