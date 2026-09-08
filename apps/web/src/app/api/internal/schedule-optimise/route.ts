@@ -32,10 +32,10 @@ function londonParts(date:Date){
 }
 function overlaps(aStart:Date,aEnd:Date,bStart:Date,bEnd:Date){return aStart<bEnd&&bStart<aEnd}
 function jobDuration(job:Job){return Math.max(30,Math.min(480,Number(job.estimated_duration_minutes||60)))}
-function fixedInterval(job:Job){
+function fixedInterval(job:Job):Occupied|null{
   if(!job.requested_start)return null;
   const start=new Date(job.requested_start);const end=new Date(start.getTime()+jobDuration(job)*60_000);
-  return{jobId:job.id,start,end,latitude:job.latitude,longitude:job.longitude,fixed:true} satisfies Occupied;
+  return{jobId:job.id,start,end,latitude:job.latitude,longitude:job.longitude,fixed:true};
 }
 function coord(item:{latitude:number|null;longitude:number|null}):Coordinate|null{return item.latitude==null||item.longitude==null?null:{latitude:Number(item.latitude),longitude:Number(item.longitude)}}
 
@@ -68,7 +68,7 @@ export async function POST(request:Request){
       const original=[...list].sort((a,b)=>String(a.requested_start).localeCompare(String(b.requested_start)));
       for(let i=1;i<original.length;i++){const a=coord(original[i-1]),b=coord(original[i]);if(a&&b)baselineSeconds+=(await travel(a,b)).seconds}
 
-      const fixed=original.filter(job=>!['window','flexible'].includes(job.schedule_mode||'')).map(fixedInterval).filter((x):x is Occupied=>Boolean(x));
+      const fixed:Occupied[]=original.filter(job=>!['window','flexible'].includes(job.schedule_mode||'')).reduce<Occupied[]>((items,job)=>{const interval=fixedInterval(job);if(interval)items.push(interval);return items},[]);
       const occupied:Occupied[]=[...fixed];
       const suggestions:Array<Record<string,unknown>>=[];
       const movable=original.filter(job=>['window','flexible'].includes(job.schedule_mode||''));
