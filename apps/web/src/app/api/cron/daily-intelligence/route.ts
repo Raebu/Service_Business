@@ -8,7 +8,8 @@ const workers=[
   '/api/internal/operational-kpis',
   '/api/internal/quality-ranking',
   '/api/internal/labour-demand',
-  '/api/internal/coverage-recruitment'
+  '/api/internal/coverage-recruitment',
+  '/api/internal/finance-close'
 ] as const;
 
 export async function GET(request:Request){
