@@ -86,6 +86,8 @@ begin
 end;
 $$;
 
+revoke all on function public.sync_engineer_competency_status() from public,anon,authenticated;
+
 drop trigger if exists sync_engineer_competency_status_trigger on public.engineer_competencies;
 create trigger sync_engineer_competency_status_trigger
 after insert or update or delete on public.engineer_competencies
@@ -115,6 +117,8 @@ begin
   return new;
 end;
 $$;
+
+revoke all on function public.enforce_offer_engineer_service_competency() from public,anon,authenticated;
 
 drop trigger if exists enforce_offer_engineer_service_competency_trigger on public.job_offers;
 create trigger enforce_offer_engineer_service_competency_trigger
