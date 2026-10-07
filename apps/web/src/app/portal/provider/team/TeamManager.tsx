@@ -31,6 +31,16 @@ export function CompetencyForm({engineerId}:{engineerId:string}){
   return <form className='mini-form' onSubmit={submit}><div className='form-grid'><label>Service / skill<input name='serviceKey' required placeholder='e.g. fault-finding'/></label><label>Current level<select name='competencyLevel' defaultValue='supervised'><option value='observer'>Observer</option><option value='supervised'>Supervised</option><option value='competent'>Competent</option><option value='advanced'>Advanced</option></select></label><label>Evidence reference<input name='evidenceReference' placeholder='Certificate, scheme, portfolio reference'/></label><label>Expiry, if any<input type='datetime-local' name='expiresAt'/></label></div><button className='button' disabled={busy}>{busy?'Saving…':'Submit competency'}</button>{message&&<small>{message}</small>}</form>;
 }
 
+export function CompetencyReviewControls({engineerId,competencyId,verified}:{engineerId:string;competencyId:string;verified:boolean}){
+  const[message,setMessage]=useState('');const[busy,setBusy]=useState(false);
+  async function review(action:'verify'|'revoke'){
+    setBusy(true);setMessage('');
+    const response=await fetch(`/api/provider/engineers/${engineerId}/competencies`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({competencyId,action})});
+    const data=await response.json().catch(()=>({}));setMessage(data.message||data.error||'Unable to review competency.');setBusy(false);if(response.ok)window.location.reload();
+  }
+  return <div className='inline-actions'><button type='button' className='button' disabled={busy} onClick={()=>review(verified?'revoke':'verify')}>{busy?'Updating…':verified?'Revoke verification':'Verify evidence'}</button>{message&&<small>{message}</small>}</div>;
+}
+
 export function AvailabilityForm({engineerId}:{engineerId:string}){
   const[message,setMessage]=useState('');const[busy,setBusy]=useState(false);const[autoAccept,setAutoAccept]=useState(false);
   async function submit(event:FormEvent<HTMLFormElement>){

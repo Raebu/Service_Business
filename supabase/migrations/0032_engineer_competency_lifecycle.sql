@@ -80,9 +80,14 @@ as $$
 declare
   target_engineer_id uuid;
 begin
-  target_engineer_id:=coalesce(new.engineer_id,old.engineer_id);
+  if TG_OP='DELETE' then
+    target_engineer_id:=old.engineer_id;
+  else
+    target_engineer_id:=new.engineer_id;
+  end if;
   perform public.refresh_engineer_unsupervised_status(target_engineer_id);
-  return coalesce(new,old);
+  if TG_OP='DELETE' then return old; end if;
+  return new;
 end;
 $$;
 
