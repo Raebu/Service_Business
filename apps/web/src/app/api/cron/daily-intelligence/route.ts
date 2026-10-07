@@ -10,7 +10,8 @@ const workers=[
   '/api/internal/labour-demand',
   '/api/internal/coverage-recruitment',
   '/api/internal/finance-close',
-  '/api/internal/reserves'
+  '/api/internal/reserves',
+  '/api/internal/competency-lifecycle'
 ] as const;
 
 export async function GET(request:Request){

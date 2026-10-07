@@ -97,10 +97,21 @@ export async function POST(request:Request){
         supabase.from('jobs').select('assigned_engineer_id,requested_start,requested_end,estimated_duration_minutes,status').in('status',['accepted','scheduled','in_progress']).not('assigned_engineer_id','is',null)
       ]);
       const engineerIds=(engineers||[]).map(e=>e.id);
-      const [{data:availability},{data:liveLocations}]=engineerIds.length?await Promise.all([
+      const [{data:availability},{data:liveLocations},{data:serviceCompetencies}]=engineerIds.length?await Promise.all([
         supabase.from('engineer_availability_rules').select('engineer_id,day_of_week,start_time,end_time,auto_accept,minimum_job_pence,maximum_duration_minutes,maximum_travel_minutes,buffer_before_minutes,buffer_after_minutes,maximum_jobs_per_day,allowed_service_keys').in('engineer_id',engineerIds).eq('active',true),
-        supabase.from('engineer_live_locations').select('engineer_id,latitude,longitude,expires_at').in('engineer_id',engineerIds).gt('expires_at',new Date().toISOString())
-      ]):[{data:[] as Availability[]},{data:[] as Array<{engineer_id:string;latitude:number;longitude:number;expires_at:string}>}];
+        supabase.from('engineer_live_locations').select('engineer_id,latitude,longitude,expires_at').in('engineer_id',engineerIds).gt('expires_at',new Date().toISOString()),
+        job.service_key
+          ?supabase.from('engineer_competencies').select('engineer_id,expires_at').in('engineer_id',engineerIds).eq('service_key',job.service_key).eq('verified',true).in('competency_level',['competent','advanced'])
+          :Promise.resolve({data:engineerIds.map(engineer_id=>({engineer_id,expires_at:null}))})
+      ]):[
+        {data:[] as Availability[]},
+        {data:[] as Array<{engineer_id:string;latitude:number;longitude:number;expires_at:string}>},
+        {data:[] as Array<{engineer_id:string;expires_at:string|null}>}
+      ];
+      const nowMs=Date.now();
+      const serviceCompetentEngineerIds=new Set((serviceCompetencies||[])
+        .filter(row=>!row.expires_at||new Date(row.expires_at).getTime()>nowMs)
+        .map(row=>row.engineer_id));
       const serviceProviderIds=new Set((serviceRows||[]).map(row=>row.provider_id));
       const priorityByProvider=new Map((coverage||[]).map(row=>[row.provider_id,row.priority]));
       const tried=new Set((triedOffers||[]).map(row=>row.provider_id));
@@ -112,7 +123,7 @@ export async function POST(request:Request){
         const rate=(rateItems||[]).find(item=>item.rate_card_id===providerCard.id);
         if(!rate)continue;
         const duration=Number(job.estimated_duration_minutes||rate.estimated_duration_minutes||60);
-        const selected=chooseEngineer({engineers:(engineers||[]).filter(e=>e.organisation_id===provider.organisation_id) as Engineer[],rules:(availability||[]) as Availability[],busy:(busyJobs||[]) as BusyJob[],scheduleMode:job.schedule_mode,requestedStart:job.requested_start,requestedEnd:job.requested_end,durationMinutes:duration,providerPricePence:Number(rate.fixed_price_pence||rate.minimum_charge_pence||0),serviceKey:job.service_key});
+        const selected=chooseEngineer({engineers:(engineers||[]).filter(e=>e.organisation_id===provider.organisation_id&&serviceCompetentEngineerIds.has(e.id)) as Engineer[],rules:(availability||[]) as Availability[],busy:(busyJobs||[]) as BusyJob[],scheduleMode:job.schedule_mode,requestedStart:job.requested_start,requestedEnd:job.requested_end,durationMinutes:duration,providerPricePence:Number(rate.fixed_price_pence||rate.minimum_charge_pence||0),serviceKey:job.service_key});
         if(!selected)continue;
         const org=(organisations||[]).find(o=>o.id===provider.organisation_id);
         const live=(liveLocations||[]).find(l=>l.engineer_id===selected.engineer.id);
