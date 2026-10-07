@@ -39,6 +39,14 @@ export async function POST(request:Request){
     if(error)return NextResponse.json({error:'Unable to load settlement queue.'},{status:500});
 
     for(const job of jobs||[]){
+      const {data:activeReserveHolds,error:reserveError}=await supabase.from('provider_reserve_holds').select('id,amount_pence,release_at').eq('job_id',job.id).eq('status','held');
+      if(reserveError){results.push({jobId:job.id,status:'reserve_check_failed'});continue}
+      if(activeReserveHolds?.length){
+        const reserveAmountPence=activeReserveHolds.reduce((sum,hold)=>sum+Number(hold.amount_pence||0),0);
+        await supabase.from('jobs').update({settlement_status:'held',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
+        results.push({jobId:job.id,status:'reserve_hold_active',reserveAmountPence,releaseTargets:activeReserveHolds.map(hold=>hold.release_at).filter(Boolean)});
+        continue;
+      }
       const {data:eligible,error:eligibilityError}=await supabase.rpc('mark_job_settlement_eligible',{p_job_id:job.id});
       if(eligibilityError||!eligible){results.push({jobId:job.id,status:'blocked'});continue}
       if(!job.matched_provider_id||!job.provider_price_pence){results.push({jobId:job.id,status:'missing_provider_or_amount'});continue}
