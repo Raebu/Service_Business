@@ -1,7 +1,7 @@
 import { getUserSupabase } from '@/lib/supabase/server';
 import { getAdminSupabase } from '@/lib/supabase/admin';
 
-export type OrganisationCapability='manage_team'|'manage_pricing'|'manage_finance'|'dispatch_jobs'|'view_team_schedule'|'view_own_jobs'|'update_own_job_progress'|'share_live_location'|'manage_payouts';
+export type OrganisationCapability='manage_team'|'manage_pricing'|'manage_finance'|'dispatch_jobs'|'view_team_schedule'|'view_own_jobs'|'update_own_job_progress'|'share_live_location'|'manage_payouts'|'manage_learners'|'manage_opportunities';
 
 export async function requireOrganisationCapability(organisationId:string,capability:OrganisationCapability){
   const userDb=await getUserSupabase();if(!userDb)return null;
