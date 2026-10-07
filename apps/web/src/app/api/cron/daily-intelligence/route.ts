@@ -9,7 +9,8 @@ const workers=[
   '/api/internal/quality-ranking',
   '/api/internal/labour-demand',
   '/api/internal/coverage-recruitment',
-  '/api/internal/finance-close'
+  '/api/internal/finance-close',
+  '/api/internal/reserves'
 ] as const;
 
 export async function GET(request:Request){
