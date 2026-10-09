@@ -16,3 +16,7 @@ This repository contains the shared production platform for service-business ver
 The repository includes provider verification, public verification profiles, coverage gating, customer booking, business enquiries, Academy interest, authentication/portals, job dispatch and offer lifecycle, operations controls, evidence moderation, reviews/quality feedback, notifications substrate, and critical foundations for individual engineer identities, competencies, availability, provider-owned rate cards, structured scheduling, geolocation fields and an append-only balanced finance journal.
 
 The electrical vertical remains the first implementation. Production Supabase/hosting/Stripe wiring is intentionally kept environment-specific and must be connected before the public domain is moved from the legacy prototype.
+
+## Deployment readiness
+
+Before any electrical customer-domain cutover, follow [the production launch preflight](docs/production-launch-preflight.md). The read-only script `node scripts/production-preflight.mjs https://DEPLOYMENT-ORIGIN` checks basic configuration and public routes only; payment, role, migration, dispatch and worker verification remain mandatory separate gates.
