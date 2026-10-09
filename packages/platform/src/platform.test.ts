@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateAreaReadiness,canPubliclyClaimNationalCoverage,calculateProviderPrice,calculateTransparentQuote,checkSlotFeasibility } from './index';
 import { rankProviders } from './matching';
+import { assertBalancedJournal,marketplaceEconomics,reverseJournal } from './finance';
 
 const thresholds={minimumVerifiedBusinesses:100,minimumProvidersPerLiveArea:3,minimumFillRate:.95,maximumMedianMatchMinutes:15};
 
@@ -74,4 +75,49 @@ test('scheduled slot is rejected when travel buffer overlaps another booking',()
   });
   assert.equal(result.feasible,false);
   assert.equal(result.reason,'conflict');
+});
+
+test('finance journal rejects negative, fractional and unsafe entries',()=>{
+  const balanced=[
+    {accountCode:'cash',direction:'debit' as const,amountPence:1000},
+    {accountCode:'liability',direction:'credit' as const,amountPence:1000}
+  ];
+  assert.deepEqual(assertBalancedJournal(balanced),{debitPence:1000,creditPence:1000});
+  for(const invalid of [-1,0,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1]){
+    assert.throws(()=>assertBalancedJournal([{...balanced[0],amountPence:invalid},balanced[1]]),/journal_invalid_line/);
+  }
+  assert.throws(()=>assertBalancedJournal([{...balanced[0],amountPence:Number.MAX_SAFE_INTEGER},balanced[0],{...balanced[1],amountPence:1}]),/journal_not_balanced/);
+});
+
+test('reversal preserves amount and balances while switching directions',()=>{
+  const original={idempotencyKey:'charge:job1',sourceType:'charge',sourceId:'job1',currency:'GBP',lines:[
+    {accountCode:'cash',direction:'debit' as const,amountPence:34500},
+    {accountCode:'provider_liability',direction:'credit' as const,amountPence:30000},
+    {accountCode:'fee_revenue',direction:'credit' as const,amountPence:4500}
+  ]};
+  const reversal=reverseJournal(original,'charge_refunded');
+  assert.deepEqual(assertBalancedJournal(reversal.lines),{debitPence:34500,creditPence:34500});
+  assert.equal(reversal.lines[0].direction,'credit');
+  assert.equal(reversal.idempotencyKey,'reversal:charge:job1');
+});
+
+test('marketplace economics rejects malformed amounts and preserves losses',()=>{
+  assert.equal(marketplaceEconomics(30000,4500,500,6000).netPlatformMarginPence,-2000);
+  assert.throws(()=>marketplaceEconomics(30000,-1),/invalid_marketplace_economics/);
+  assert.throws(()=>marketplaceEconomics(30000,4500,Number.NaN),/invalid_marketplace_economics/);
+});
+
+test('price calculations reject negative, unsafe and nonfinite inputs',()=>{
+  assert.throws(()=>calculateProviderPrice({pricingMode:'fixed',fixedPricePence:2000,travelChargePence:-1}),/travel_charge/);
+  assert.throws(()=>calculateProviderPrice({pricingMode:'fixed',fixedPricePence:-500}),/fixed_price/);
+  assert.throws(()=>calculateProviderPrice({pricingMode:'hourly',hourlyPence:3000},Number.POSITIVE_INFINITY),/duration_required/);
+  assert.throws(()=>calculateProviderPrice({pricingMode:'fixed',fixedPricePence:1000,emergencyMultiplier:Infinity},undefined,true),/invalid_emergency_multiplier/);
+  assert.throws(()=>calculateTransparentQuote({providerPricePence:Number.MAX_SAFE_INTEGER,customerFeeBps:1500}),/platform_fee|customer_total/);
+  assert.throws(()=>calculateTransparentQuote({providerPricePence:1000,minimumFeePence:2000,maximumFeePence:-1}),/maximum_fee/);
+});
+
+test('provider matching handles nonfinite and missing scores predictably',()=>{
+  const [candidate]=rankProviders([{providerId:'p1',coversArea:true,serviceMatch:true,verificationActive:true,availableNow:true,qualityScore:NaN,acceptanceRate:Infinity,completionRate:.8,reworkRate:0,coveragePriority:NaN}]);
+  assert.equal(Number.isFinite(candidate.score),true);
+  assert.deepEqual(rankProviders([{providerId:'',coversArea:true,serviceMatch:true,verificationActive:true,availableNow:true,qualityScore:80,acceptanceRate:1,completionRate:1,reworkRate:0}]),[]);
 });
