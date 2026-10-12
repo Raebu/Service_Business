@@ -45,3 +45,32 @@ export function FinanceExceptionActions({exceptionId}:{exceptionId:string}){
   }
   return <div className='inline-actions'><button className='button' disabled={busy} onClick={()=>finalise('resolved')}>Mark resolved</button><button className='button danger' disabled={busy} onClick={()=>finalise('ignored')}>Ignore with reason</button>{message&&<small>{message}</small>}</div>;
 }
+
+
+export function CaseActions({caseId,status}:{caseId:string;status:string}){
+  const [busy,setBusy]=useState(false);
+  const [message,setMessage]=useState('');
+  async function resolveCase(){
+    const resolution=window.prompt('Resolution details');
+    if(!resolution||resolution.trim().length<8)return;
+    setBusy(true);setMessage('');
+    const res=await fetch(`/api/admin/cases/${caseId}/resolve`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({resolution})});
+    const data=await res.json().catch(()=>({}));
+    setMessage(res.ok?'Case resolved.':data.error||'Unable to resolve case.');
+    setBusy(false);
+    if(res.ok)window.location.reload();
+  }
+  async function evidence(){
+    setBusy(true);setMessage('');
+    const res=await fetch(`/api/admin/cases/${caseId}/evidence-bundle`,{cache:'no-store'});
+    if(!res.ok){const data=await res.json().catch(()=>({}));setMessage(data.error||'Unable to generate evidence bundle.');setBusy(false);return;}
+    const data=await res.json();
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;link.download=`case-${caseId}-evidence.json`;link.click();
+    URL.revokeObjectURL(url);setBusy(false);
+  }
+  const closed=status==='resolved'||status==='closed';
+  return <div className='inline-actions'><button className='button' disabled={busy} onClick={evidence}>Evidence bundle</button>{!closed&&<button className='button' disabled={busy} onClick={resolveCase}>Resolve case</button>}{message&&<small>{message}</small>}</div>;
+}
