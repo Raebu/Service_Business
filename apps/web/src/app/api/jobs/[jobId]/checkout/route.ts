@@ -13,11 +13,14 @@ export async function POST(request:Request,{params}:{params:Promise<{jobId:strin
   try{
     if(!await customerMayAccessJob(jobId,parsed.data.token))return NextResponse.json({error:'Booking access denied.'},{status:403});
     const supabase=getAdminSupabase();
-    const {data:job,error}=await supabase.from('jobs').select('id,status,service_key,provider_price_pence,platform_fee_pence,customer_total_pence,currency,payment_status,stripe_checkout_session_id,email,customer_name,matched_provider_id,postcode,urgency,quote_version,schedule_mode').eq('id',jobId).maybeSingle();
+    const {data:job,error}=await supabase.from('jobs').select('id,status,service_key,provider_price_pence,platform_fee_pence,customer_total_pence,currency,payment_status,stripe_checkout_session_id,email,customer_name,matched_provider_id,postcode,urgency,quote_version,schedule_mode').eq('id',jobId).maybeSingle().throwOnError();
     if(error||!job)return NextResponse.json({error:'Booking not found.'},{status:404});
     if(job.status!=='accepted'||!job.matched_provider_id)return NextResponse.json({error:'The electrician has not accepted this booking yet.'},{status:409});
-    if(job.payment_status==='paid')return NextResponse.json({error:'This booking is already paid.'},{status:409});
+    if(['paid','partially_refunded','refunded','disputed'].includes(job.payment_status))return NextResponse.json({error:'This booking has a completed or disputed payment.'},{status:409});
     if(!job.provider_price_pence||job.platform_fee_pence==null||!job.customer_total_pence)return NextResponse.json({error:'A final transparent quote is not available yet.'},{status:409});
+    const amount=Number(job.provider_price_pence),fee=Number(job.platform_fee_pence),total=Number(job.customer_total_pence);
+    if(!Number.isSafeInteger(amount)||amount<=0||!Number.isSafeInteger(fee)||fee<0||!Number.isSafeInteger(total)||total!==amount+fee)
+      return NextResponse.json({error:'The agreed pricing requires reconciliation before checkout.'},{status:409});
     const stripe=getStripeClient();
     if(job.stripe_checkout_session_id){
       const existing=await stripe.checkout.sessions.retrieve(job.stripe_checkout_session_id);
@@ -54,8 +57,8 @@ export async function POST(request:Request,{params}:{params:Promise<{jobId:strin
       cancel_url:`${site}/book?job=${encodeURIComponent(jobId)}&payment=cancelled`,
       integration_identifier:STRIPE_INTEGRATION_IDENTIFIER
     },{idempotencyKey:`checkout:${jobId}:${job.customer_total_pence}`});
-    await supabase.from('jobs').update({stripe_checkout_session_id:session.id,stripe_transfer_group:transferGroup,payment_status:'checkout_created',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jobId);
-    await supabase.from('audit_events').insert({event_type:'payment.checkout_created',entity_type:'job',entity_id:jobId,metadata:{checkoutSessionId:session.id,customerTotalPence:job.customer_total_pence,providerPricePence:job.provider_price_pence,platformFeePence:job.platform_fee_pence,radarSignals:{postcodeArea,urgency:job.urgency,scheduleMode:job.schedule_mode,quoteVersion:job.quote_version}}});
+    await supabase.from('jobs').update({stripe_checkout_session_id:session.id,stripe_transfer_group:transferGroup,payment_status:'checkout_created',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',jobId).throwOnError();
+    await supabase.from('audit_events').insert({event_type:'payment.checkout_created',entity_type:'job',entity_id:jobId,metadata:{checkoutSessionId:session.id,customerTotalPence:job.customer_total_pence,providerPricePence:job.provider_price_pence,platformFeePence:job.platform_fee_pence,radarSignals:{postcodeArea,urgency:job.urgency,scheduleMode:job.schedule_mode,quoteVersion:job.quote_version}}}).throwOnError();
     return NextResponse.json({checkoutUrl:session.url,sessionId:session.id});
   }catch(error){
     if(error instanceof SupabaseConfigurationError)return NextResponse.json({error:'Production database credentials are not configured.'},{status:503});
