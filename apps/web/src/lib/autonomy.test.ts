@@ -45,3 +45,12 @@ test('browser control mutations are same-origin only',()=>{
  assert.equal(sameOriginAdminRequest(null,
     'https://service-business-ten.vercel.app/api/autonomy/admin/controls'),false);
 });
+
+test('sensitive finance tasks have two independent activation gates',()=>{
+ const base={AUTONOMY_KERNEL_ENABLED:'true',ENABLE_DAILY_AUTONOMY:'true'};
+ assert.equal(canRunWorkflow('finance_close',base),false);
+ assert.equal(canRunWorkflow('reserves',base),false);
+ assert.equal(canRunWorkflow('finance_close',{...base,ENABLE_AUTOMATED_FINANCE_CLOSE:'true'}),true);
+ assert.equal(canRunWorkflow('reserves',{...base,ENABLE_AUTOMATED_RESERVE_RELEASE:'true'}),true);
+ assert.equal(canRunWorkflow('reserves',{...base,ENABLE_AUTOMATED_FINANCE_CLOSE:'true'}),false);
+});
