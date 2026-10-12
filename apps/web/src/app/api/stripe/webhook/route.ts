@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import {stripeReceiptDecision} from '@service-business/platform';
 import { getAdminSupabase, SupabaseConfigurationError } from '@/lib/supabase/admin';
 import { getStripeClient,StripeConfigurationError } from '@/lib/stripe';
 
@@ -70,18 +71,15 @@ export async function POST(request:Request){
 
   try{
     const supabase=getAdminSupabase();
-    const {error:receiptError}=await supabase.from('stripe_event_receipts').insert({event_id:event.id,event_type:event.type,stripe_created_at:new Date(event.created*1000).toISOString(),processing_status:'processing'}).throwOnError();
+    const {error:receiptError}=await supabase.from('stripe_event_receipts').insert({event_id:event.id,event_type:event.type,stripe_created_at:new Date(event.created*1000).toISOString(),processing_status:'processing'});
     if(receiptError?.code==='23505'){
       // Stripe retries failed and interrupted deliveries: only terminal receipts are acknowledged.
       const {data:previous,error:lookupError}=await supabase.from('stripe_event_receipts')
         .select('processing_status,received_at').eq('event_id',event.id).maybeSingle();
       if(lookupError||!previous)return NextResponse.json({error:'Unable to inspect previous Stripe delivery.'},{status:503});
-      if(previous.processing_status==='processed'||previous.processing_status==='ignored'){
-        return NextResponse.json({received:true,duplicate:true});
-      }
-      const stale=previous.processing_status==='processing'&&
-        Date.parse(previous.received_at)<Date.now()-5*60*1000;
-      if(previous.processing_status!=='failed'&&!stale){
+      const decision=stripeReceiptDecision(previous.processing_status,previous.received_at,Date.now());
+      if(decision==='ack')return NextResponse.json({received:true,duplicate:true});
+      if(decision==='retry'){
         return NextResponse.json({error:'Stripe event is already being processed; retry later.'},{status:503});
       }
       // Compare-and-swap prevents concurrent retry workers from both claiming a receipt.
