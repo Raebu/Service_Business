@@ -1,10 +1,13 @@
 import {NextResponse} from 'next/server';
 import {isAutonomyAdmin} from '@/lib/autonomy-admin';
 import {getAdminSupabase} from '@/lib/supabase/admin';
+import {sameOriginAdminRequest} from '@/lib/autonomy';
 export const runtime='nodejs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export async function POST(_request:Request,{params}:{params:Promise<{workflowId:string}>}){
+export async function POST(request:Request,{params}:{params:Promise<{workflowId:string}>}){
  if(!await isAutonomyAdmin())return NextResponse.json({error:'Forbidden'},{status:403});
+ if(!sameOriginAdminRequest(request.headers.get('origin'),request.url))
+   return NextResponse.json({error:'Cross-origin update refused'},{status:403});
  const {workflowId}=await params;
  if(!uuid.test(workflowId))return NextResponse.json({error:'Invalid workflow ID'},{status:400});
  try{
