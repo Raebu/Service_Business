@@ -9,7 +9,7 @@ export const runtime='nodejs';
 async function markReceipt(eventId:string,status:'processed'|'failed'|'ignored',errorMessage?:string){
   const supabase=getAdminSupabase();
   const {data:updated,error}=await supabase.from('stripe_event_receipts').update({processing_status:status,error_message:errorMessage||null,processed_at:new Date().toISOString()}).eq('event_id',eventId).select('event_id').throwOnError();
-  if(error||updated?.length!==1)throw new Error(`Unable to persist Stripe event receipt ${eventId}: ${error?.message||'missing receipt'}`);
+  if(updated?.length!==1)throw new Error(`Unable to persist Stripe event receipt ${eventId}: missing receipt`);
 }
 
 async function syncCorporateInvoice(invoice:Stripe.Invoice,eventType:string){
