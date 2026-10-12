@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserSupabase } from '@/lib/supabase/server';
 import { getAdminSupabase, SupabaseConfigurationError } from '@/lib/supabase/admin';
+import { requireOrganisationCapability } from '@/lib/authorisation';
 
 const schema=z.object({
   dayOfWeek:z.coerce.number().int().min(0).max(6),
@@ -25,8 +26,7 @@ export async function POST(request:Request,{params}:{params:Promise<{engineerId:
   try{
     const admin=getAdminSupabase();
     const {data:engineer}=await admin.from('engineers').select('id,organisation_id,user_id').eq('id',engineerId).maybeSingle();if(!engineer)return NextResponse.json({error:'Engineer not found.'},{status:404});
-    const {data:membership}=await admin.from('organisation_members').select('role').eq('organisation_id',engineer.organisation_id).eq('user_id',user.id).maybeSingle();
-    const allowed=engineer.user_id===user.id||Boolean(membership&&['owner','admin','manager','dispatcher'].includes(membership.role));if(!allowed)return NextResponse.json({error:'You cannot manage this schedule.'},{status:403});
+    const allowed=engineer.user_id===user.id||Boolean(await requireOrganisationCapability(engineer.organisation_id,'dispatch_jobs'));if(!allowed)return NextResponse.json({error:'You cannot manage this schedule.'},{status:403});
     const {data:rule,error}=await admin.from('engineer_availability_rules').insert({engineer_id:engineerId,day_of_week:parsed.data.dayOfWeek,start_time:parsed.data.startTime,end_time:parsed.data.endTime,timezone:parsed.data.timezone,auto_accept:parsed.data.autoAccept,minimum_job_pence:parsed.data.minimumJobPence,maximum_duration_minutes:parsed.data.maximumDurationMinutes??null,maximum_travel_minutes:parsed.data.maximumTravelMinutes??null,buffer_before_minutes:parsed.data.bufferBeforeMinutes,buffer_after_minutes:parsed.data.bufferAfterMinutes,maximum_jobs_per_day:parsed.data.maximumJobsPerDay??null,allowed_service_keys:parsed.data.allowedServiceKeys,active:true}).select('*').single();
     if(error)return NextResponse.json({error:'Unable to save availability.',detail:error.message},{status:500});
     await admin.from('audit_events').insert({actor_user_id:user.id,event_type:'engineer.availability_added',entity_type:'engineer',entity_id:engineerId,metadata:{ruleId:rule.id,dayOfWeek:parsed.data.dayOfWeek,autoAccept:parsed.data.autoAccept,bufferBeforeMinutes:parsed.data.bufferBeforeMinutes,bufferAfterMinutes:parsed.data.bufferAfterMinutes,maximumJobsPerDay:parsed.data.maximumJobsPerDay,allowedServiceKeys:parsed.data.allowedServiceKeys}});
