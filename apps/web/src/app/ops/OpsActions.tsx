@@ -47,7 +47,7 @@ export function FinanceExceptionActions({exceptionId}:{exceptionId:string}){
 }
 
 
-export function CaseActions({caseId,status}:{caseId:string;status:string}){
+export function CaseActions({caseId,status,policies}:{caseId:string;status:string;policies:Array<{code:string;label:string;action:string}>}){
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
   async function resolveCase(){
@@ -57,6 +57,28 @@ export function CaseActions({caseId,status}:{caseId:string;status:string}){
     const res=await fetch(`/api/admin/cases/${caseId}/resolve`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({resolution})});
     const data=await res.json().catch(()=>({}));
     setMessage(res.ok?'Case resolved.':data.error||'Unable to resolve case.');
+    setBusy(false);
+    if(res.ok)window.location.reload();
+  }
+  async function automate(){
+    if(!policies.length)return;
+    const choices=policies.map(policy=>`${policy.code} — ${policy.label}`).join('\n');
+    const policyCode=window.prompt(`Choose an approved recovery policy by code:\n\n${choices}`,policies[0].code);
+    if(!policyCode)return;
+    const selected=policies.find(policy=>policy.code===policyCode.trim());
+    if(!selected){setMessage('Choose one of the listed recovery policy codes.');return;}
+    let refundPence:number|undefined;
+    if(selected.action==='refund_partial'){
+      const pounds=window.prompt('Partial refund amount in pounds, e.g. 25.00');
+      if(!pounds)return;
+      const parsed=Math.round(Number(pounds)*100);
+      if(!Number.isFinite(parsed)||parsed<=0){setMessage('Enter a valid positive refund amount.');return;}
+      refundPence=parsed;
+    }
+    setBusy(true);setMessage('');
+    const res=await fetch(`/api/admin/cases/${caseId}/automate`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({policyCode:selected.code,...(refundPence?{refundPence}:{})})});
+    const data=await res.json().catch(()=>({}));
+    setMessage(res.ok?`Recovery queued: ${data.action||selected.action}.`:data.error||'Unable to queue recovery automation.');
     setBusy(false);
     if(res.ok)window.location.reload();
   }
@@ -72,5 +94,5 @@ export function CaseActions({caseId,status}:{caseId:string;status:string}){
     URL.revokeObjectURL(url);setBusy(false);
   }
   const closed=status==='resolved'||status==='closed';
-  return <div className='inline-actions'><button className='button' disabled={busy} onClick={evidence}>Evidence bundle</button>{!closed&&<button className='button' disabled={busy} onClick={resolveCase}>Resolve case</button>}{message&&<small>{message}</small>}</div>;
+  return <div className='inline-actions'><button className='button' disabled={busy} onClick={evidence}>Evidence bundle</button>{!closed&&policies.length>0&&<button className='button' disabled={busy} onClick={automate}>Queue approved recovery</button>}{!closed&&<button className='button' disabled={busy} onClick={resolveCase}>Resolve case</button>}{message&&<small>{message}</small>}</div>;
 }
