@@ -53,3 +53,10 @@ export const excludedFromAutonomy=[
   'stripe_transfer','provider_settlement','refund','approve_provider',
   'approve_electrical_qualification','publish_content','activate_service_area'
 ] as const;
+
+/** Browser-admin mutations require same-origin POSTs; never accept cross-site requests. */
+export function sameOriginAdminRequest(origin:string|null,url:string):boolean{
+ if(!origin)return false;
+ try{return new URL(origin).origin===new URL(url).origin}
+ catch{return false}
+}
