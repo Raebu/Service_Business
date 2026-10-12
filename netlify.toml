@@ -1,0 +1,10 @@
+[build]
+  base = "."
+  command = "corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @service-business/web build"
+  publish = "apps/web/.next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Netlify Next.js runtime automatically handles SSR and App Router API routes.
+# Secrets must be configured in Netlify Build and Functions scopes, not here.
