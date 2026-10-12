@@ -10,16 +10,19 @@ export async function GET(request:Request){
   if(!internalRequestAuthorised(request))return NextResponse.json({error:'Unauthorised'},{status:401});
   try{
     const db=getAdminSupabase();
-    const [controls,campaigns,leads,attempts,inbox,suppressed,runs]=await Promise.all([
+    const [controls,campaigns,leads,attempts,inbox,suppressed,runs,education,educationResearch,meetings]=await Promise.all([
       db.from('growth_controls').select('outbound_enabled,inbound_enabled,follow_ups_enabled,max_per_hour,max_per_day').eq('id',true).single(),
       db.from('growth_campaigns').select('id,status,workstream,created_at'),
       db.from('growth_outreach_queue').select('id,status,workstream'),
       db.from('growth_outreach_attempts').select('id,status,claimed_at').gte('claimed_at',new Date(Date.now()-30*86400000).toISOString()),
       db.from('growth_inbound_messages').select('id,classification,processed').eq('processed',false),
       db.from('growth_suppressions').select('email',{count:'exact',head:true}),
-      db.from('growth_automation_runs').select('worker,status,ran_at').order('ran_at',{ascending:false}).limit(15)
+      db.from('growth_automation_runs').select('worker,status,ran_at').order('ran_at',{ascending:false}).limit(15),
+      db.from('growth_education_partnerships').select('stage,institution_type'),
+      db.from('growth_education_discovery').select('status'),
+      db.from('growth_meeting_requests').select('status,workstream')
     ]);
-    if([controls,campaigns,leads,attempts,inbox,suppressed,runs].some(x=>x.error))
+    if([controls,campaigns,leads,attempts,inbox,suppressed,runs,education,educationResearch,meetings].some(x=>x.error))
       return NextResponse.json({error:'Unable to read growth dashboard'},{status:503});
     const count=(rows:Array<{status:string}>|null|undefined)=>rows?.reduce<Record<string,number>>((acc,r)=>{
       acc[r.status]=(acc[r.status]||0)+1;return acc;
@@ -30,6 +33,10 @@ export async function GET(request:Request){
       delivery:count(attempts.data),
       inboundNeedingReview:inbox.data?.length||0,
       suppressed:suppressed.count||0,
+      education:{partnershipProfiles:education.data?.length||0,
+        stages:education.data?.reduce<Record<string,number>>((acc,x)=>{acc[x.stage]=(acc[x.stage]||0)+1;return acc;},{}),
+        researchCandidates:educationResearch.data?.length||0,
+        meetingRequests:meetings.data?.filter(m=>m.workstream==='education_partnerships').length||0},
       recentWorkers:runs.data,
       operationalMode:process.env.ENABLE_AUTONOMOUS_OUTREACH==='true'?'configured_for_live_gated':'disabled',
       generatedAt:new Date().toISOString()
