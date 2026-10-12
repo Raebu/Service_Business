@@ -1,6 +1,6 @@
 import {createHmac,timingSafeEqual} from 'node:crypto';
 
-export const outreachWorkstreams=['provider_recruitment','corporate_acquisition','academy_employer'] as const;
+export const outreachWorkstreams=['provider_recruitment','corporate_acquisition','academy_employer','education_partnerships'] as const;
 export type OutreachWorkstream=typeof outreachWorkstreams[number];
 export type CompanyType='corporate'|'individual'|'unknown';
 export type LegalBasis='legitimate_interests'|'consent'|'soft_opt_in'|'unassessed';

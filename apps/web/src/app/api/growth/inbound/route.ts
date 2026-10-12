@@ -43,25 +43,47 @@ export async function POST(request:Request){
     }
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender))
       return NextResponse.json({ignored:true,reason:'sender_not_email'});
-    // Subject-only analysis is deliberately conservative until the full message is
-    // retrieved with the inbound read API. Never send an autonomous AI reply here.
-    const classification=classifyGrowthReply(data.subject||'','');
+    // Resend sends metadata only in the webhook. Retrieve the signed event's
+    // full body using our private Resend API key before classifying opt-outs.
+    const apiKey=process.env.GROWTH_RESEND_RECEIVING_API_KEY||process.env.RESEND_API_KEY;
+    if(!apiKey)return NextResponse.json({error:'Inbound receiving credentials missing'},{status:503});
+    const receivedResponse=await fetch(
+      'https://api.resend.com/emails/receiving/'+encodeURIComponent(id),{
+        headers:{authorization:`Bearer ${apiKey}`},cache:'no-store',
+        signal:AbortSignal.timeout(10000)
+      });
+    if(!receivedResponse.ok)return NextResponse.json({error:'Cannot fetch inbound email'},{status:503});
+    const full=await receivedResponse.json() as {text?:string|null;subject?:string|null;from?:string|null};
+    const body=(full.text||'').slice(0,10000);
+    const classification=classifyGrowthReply(full.subject||data.subject||'',body);
     const {error:insertError}=await db.from('growth_inbound_messages').insert({
       provider_message_id:id,sender_email:sender,recipient_email:destination||null,
-      subject:(data.subject||'').slice(0,300),text_excerpt:null,classification,processed:false
+      subject:(full.subject||data.subject||'').slice(0,300),text_excerpt:body.slice(0,2000),
+      classification,processed:false
     });
-    if(insertError?.code==='23505')return NextResponse.json({received:true,duplicate:true});
-    if(insertError)return NextResponse.json({error:'Unable to record inbound message'},{status:503});
+    if(insertError&&insertError.code!=='23505')
+      return NextResponse.json({error:'Unable to record inbound message'},{status:503});
+    if(insertError?.code==='23505'){
+      const {data:existing,error:existingError}=await db.from('growth_inbound_messages')
+        .select('processed').eq('provider_message_id',id).single();
+      if(existingError)return NextResponse.json({error:'Cannot inspect duplicate delivery'},{status:503});
+      if(existing.processed)return NextResponse.json({received:true,duplicate:true});
+    }
+    // Any incoming reply pauses follow-ups, even if it cannot be classified.
     const {error:leadError}=await db.from('growth_outreach_queue')
-      .update({replied_at:new Date().toISOString(),next_contact_at:null,status:'replied',updated_at:new Date().toISOString()})
+      .update({replied_at:new Date().toISOString(),next_contact_at:null,status:'replied',
+        updated_at:new Date().toISOString()})
       .eq('direct_email',sender).in('status',['ready','contacted']);
     if(leadError)return NextResponse.json({error:'Unable to pause replied contacts'},{status:503});
     if(classification==='unsubscribe'||classification==='not_interested'){
       const {error}=await db.rpc('suppress_growth_email',{
-        p_email:sender,p_reason:classification,p_source:'inbound_reply_subject'
+        p_email:sender,p_reason:classification,p_source:'inbound_reply'
       });
       if(error)return NextResponse.json({error:'Unable to apply reply suppression'},{status:503});
     }
+    const {error:completeError}=await db.from('growth_inbound_messages')
+      .update({classification,processed:true}).eq('provider_message_id',id);
+    if(completeError)return NextResponse.json({error:'Reply handling requires reconciliation'},{status:503});
     return NextResponse.json({received:true,triage:'human_review',classification});
   }catch{
     return NextResponse.json({error:'Inbound growth event processing failed'},{status:503});
