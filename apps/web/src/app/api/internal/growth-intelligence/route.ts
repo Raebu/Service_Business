@@ -22,6 +22,18 @@ export async function POST(request:Request){
       },{onConflict:'source_reference',ignoreDuplicates:true});
       if(saveError)return NextResponse.json({error:'Recommendation failed'},{status:503});
       suggestions++;
+      if(s.category==='content'){
+        const today=new Date();
+        const month=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),1)).toISOString().slice(0,10);
+        const {error:draftError}=await db.from('growth_content_drafts').upsert({
+          vertical_id:'electrical',area:item.area,service_key:item.service_key,period_start:month,
+          headline:`${item.service_key} in ${item.area}: what customers should know`,
+          brief:`Editorial review required. Measured demand ${item.demand_count}, verified providers ${item.verified_provider_count}. Recheck coverage before publication.`,
+          demand_count:item.demand_count,verified_provider_count:item.verified_provider_count,
+          status:'review'
+        },{onConflict:'vertical_id,area,service_key,period_start',ignoreDuplicates:true});
+        if(draftError)return NextResponse.json({error:'Draft storage failed'},{status:503});
+      }
     }
     return NextResponse.json({enabled:true,signals:data?.length||0,suggestions});
   }catch{return NextResponse.json({error:'Growth worker failed'},{status:503});}
