@@ -6,6 +6,7 @@ const BATCH=25;
 
 export async function POST(request:Request){
   if(!internalRequestAuthorised(request))return NextResponse.json({error:'Unauthorised.'},{status:401});
+  if(process.env.ENABLE_AUTOMATED_FINANCE_CLOSE!=='true')return NextResponse.json({error:'Automated finance close is disabled.'},{status:503});
   try{
     const supabase=getAdminSupabase();
     const today=new Date().toISOString().slice(0,10);
