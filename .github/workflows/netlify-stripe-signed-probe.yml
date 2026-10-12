@@ -1,0 +1,43 @@
+name: Netlify Stripe signed webhook probe
+on:
+  push:
+    branches:
+      - test/netlify-stripe-signed-probe-20261012
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send unsigned and signed non-payment webhook probes
+        env:
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,hmac,json,os,time,urllib.request,urllib.error,sys
+          secret=os.environ.get('STRIPE_WEBHOOK_SECRET','')
+          if not secret:
+            print('BLOCKED: GitHub STRIPE_WEBHOOK_SECRET is missing')
+            sys.exit(2)
+          url='https://raeburn-service-business.netlify.app/api/stripe/webhook'
+          # Purposefully unhandled type: Stripe signature and receipt verification only; no charges.
+          payload=json.dumps({'id':'evt_netlify_smoke_'+str(int(time.time())),'object':'event','type':'service_business.integration_smoke','api_version':'2025-08-27.basil','created':int(time.time()),'livemode':False,'data':{'object':{'object':'test'}}},separators=(',',':')).encode()
+          def post(signature):
+            req=urllib.request.Request(url,payload,{'Content-Type':'application/json','Stripe-Signature':signature},method='POST')
+            try:
+              with urllib.request.urlopen(req,timeout=25) as resp:
+                return resp.status,resp.read(350).decode(errors='replace')
+            except urllib.error.HTTPError as e:
+              return e.code,e.read(350).decode(errors='replace')
+          negative=post('t=1,v1=invalid')
+          print('Invalid signature HTTP:',negative[0])
+          if negative[0]!=400:
+            print('FAIL: invalid signatures were not rejected',negative[1]);sys.exit(1)
+          ts=str(int(time.time()))
+          mac=hmac.new(secret.encode(),ts.encode()+b'.'+payload,hashlib.sha256).hexdigest()
+          positive=post('t='+ts+',v1='+mac)
+          print('Signed non-payment event HTTP:',positive[0])
+          if positive[0]!=200:
+            print('FAIL: signed event was not processed',positive[1]);sys.exit(1)
+          print('PASS: invalid signature rejected and signed non-payment event accepted')
+          PY
