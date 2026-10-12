@@ -2,6 +2,7 @@ import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {isAutonomyAdmin} from '@/lib/autonomy-admin';
 import {getAdminSupabase} from '@/lib/supabase/admin';
+import {sameOriginAdminRequest} from '@/lib/autonomy';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 const schema=z.object({
@@ -11,6 +12,8 @@ const schema=z.object({
 }).strict();
 export async function POST(request:Request){
  if(!await isAutonomyAdmin())return NextResponse.json({error:'Forbidden'},{status:403});
+ if(!sameOriginAdminRequest(request.headers.get('origin'),request.url))
+   return NextResponse.json({error:'Cross-origin update refused'},{status:403});
  const input=schema.safeParse(await request.json().catch(()=>null));
  if(!input.success)return NextResponse.json({error:'Invalid control operation'},{status:400});
  const {domain,enabled,confirmation}=input.data;
