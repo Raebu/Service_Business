@@ -33,5 +33,5 @@ export async function GET(request:Request){
     :operationalWorkers;
   const results=await runInternalWorkers(request,workers,secret);
   const failed=results.filter(result=>!result.ok);
-  return NextResponse.json({ok:failed.length===0,ran:results.length,failed:failed.length,results,checkedAt:new Date().toISOString()},{status:failed.length?207:200,headers:{'cache-control':'no-store'}});
+  return NextResponse.json({ok:failed.length===0,ran:results.length,failed:failed.length,results,checkedAt:new Date().toISOString()},{status:failed.length?503:200,headers:{'cache-control':'no-store'}});
 }
