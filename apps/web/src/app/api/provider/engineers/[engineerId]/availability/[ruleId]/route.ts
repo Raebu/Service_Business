@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserSupabase } from '@/lib/supabase/server';
 import { getAdminSupabase, SupabaseConfigurationError } from '@/lib/supabase/admin';
+import { requireOrganisationCapability } from '@/lib/authorisation';
 
 const schema=z.object({
   startTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -20,8 +21,7 @@ async function authorise(engineerId:string,userId:string){
   const admin=getAdminSupabase();
   const {data:engineer}=await admin.from('engineers').select('id,organisation_id,user_id').eq('id',engineerId).maybeSingle();
   if(!engineer)return{ok:false as const,status:404,error:'Engineer not found.'};
-  const {data:membership}=await admin.from('organisation_members').select('role').eq('organisation_id',engineer.organisation_id).eq('user_id',userId).maybeSingle();
-  const allowed=engineer.user_id===userId||Boolean(membership&&['owner','admin','manager','dispatcher'].includes(membership.role));
+  const allowed=engineer.user_id===userId||Boolean(await requireOrganisationCapability(engineer.organisation_id,'dispatch_jobs'));
   if(!allowed)return{ok:false as const,status:403,error:'You cannot manage this schedule.'};
   return{ok:true as const,admin,engineer};
 }
