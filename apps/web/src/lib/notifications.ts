@@ -12,6 +12,16 @@ const escapeHtml=(value:unknown)=>String(value??'').replace(/[&<>"']/g,char=>({'
 const value=(payload:Record<string,unknown>,key:string,fallback='')=>String(payload[key]??fallback);
 
 const templates:Record<string,(payload:Record<string,unknown>)=>RenderedNotification>={
+  'business.enquiry_received':p=>({
+    subject:'Your Raeburn Services enquiry has been received',
+    text:`Thank you ${value(p,'contactName','for contacting us')}. We have received the enquiry for ${value(p,'organisation','your organisation')}. Our team will review the requirements and contact you about next steps. This is not a confirmed booking or service commitment.`,
+    html:`<p>Thank you ${escapeHtml(value(p,'contactName','for contacting us'))}.</p><p>We have received the enquiry for <strong>${escapeHtml(value(p,'organisation','your organisation'))}</strong>.</p><p>Our team will review the requirements and contact you about next steps. No booking or service commitment has been confirmed.</p>`
+  }),
+  'provider.evidence_required_reminder':p=>({
+    subject:'Action needed — complete your electrician application',
+    text:`Hello ${value(p,'contactName','there')}. The application for ${value(p,'businessName','your business')} still needs additional verification evidence. Please review your application and upload the documents requested by our team. No work will be allocated until the verification process is complete.`,
+    html:`<p>Hello ${escapeHtml(value(p,'contactName','there'))}.</p><p>The application for <strong>${escapeHtml(value(p,'businessName','your business'))}</strong> still needs additional verification evidence. Please review the outstanding request and upload the documents needed to proceed.</p><p>Work cannot be allocated before verification is complete.</p>`
+  }),
   'provider.application_received':p=>({subject:'National Electrician Hub application received',text:`Thanks ${value(p,'contactName','there')}. We have received the application for ${value(p,'businessName','your electrical business')}. We will only activate the profile after the required verification evidence is accepted.`,html:`<p>Thanks ${escapeHtml(value(p,'contactName','there'))}.</p><p>We have received the application for <strong>${escapeHtml(value(p,'businessName','your electrical business'))}</strong>.</p><p>We will only activate the profile after the required verification evidence is accepted.</p>`}),
   'provider.evidence_verified':p=>({subject:`Verification evidence approved — ${value(p,'label','document')}`,text:`Your ${value(p,'label','verification document')} has been approved.${value(p,'expiresAt')?` It is recorded as expiring on ${value(p,'expiresAt')}.`:''}`,html:`<p>Your <strong>${escapeHtml(value(p,'label','verification document'))}</strong> has been approved.</p>${value(p,'expiresAt')?`<p>Recorded expiry: ${escapeHtml(value(p,'expiresAt'))}.</p>`:''}`}),
   'provider.evidence_rejected':p=>({subject:`Action required — ${value(p,'label','verification evidence')}`,text:`We could not approve ${value(p,'label','the submitted evidence')}. ${value(p,'reason','Please review the document and upload valid evidence.')}`,html:`<p>We could not approve <strong>${escapeHtml(value(p,'label','the submitted evidence'))}</strong>.</p><p>${escapeHtml(value(p,'reason','Please review the document and upload valid evidence.'))}</p>`}),
