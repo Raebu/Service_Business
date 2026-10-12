@@ -8,7 +8,7 @@ const BATCH_SIZE=25;
 type ProviderReady={ok:true;accountId:string}|{ok:false;status:string;transferState?:string};
 
 async function payoutDestination(supabase:ReturnType<typeof getAdminSupabase>,stripe:ReturnType<typeof getStripeClient>,providerId:string):Promise<ProviderReady>{
-  const {data:provider,error}=await supabase.from('providers').select('id,stripe_account_id').eq('id',providerId).maybeSingle();
+  const {data:provider,error}=await supabase.from('providers').select('id,stripe_account_id').eq('id',providerId).maybeSingle().throwOnError();
   if(error||!provider?.stripe_account_id)return{ok:false,status:'provider_not_payout_ready'};
   const account=await stripe.v2.core.accounts.retrieve(provider.stripe_account_id,{include:['configuration.recipient','requirements']});
   const raw=account as unknown as Record<string,any>;
@@ -17,7 +17,7 @@ async function payoutDestination(supabase:ReturnType<typeof getAdminSupabase>,st
   const requirements=raw.requirements||{};
   const hasRequirements=Array.isArray(requirements?.currently_due)?requirements.currently_due.length>0:Boolean(requirements?.summary?.minimum_deadline);
   const accountStatus=transfersActive?'active':hasRequirements?'restricted':'pending';
-  await supabase.from('providers').update({stripe_account_status:accountStatus,stripe_transfers_active:transfersActive,stripe_requirements:requirements,stripe_updated_at:new Date().toISOString()}).eq('id',provider.id);
+  await supabase.from('providers').update({stripe_account_status:accountStatus,stripe_transfers_active:transfersActive,stripe_requirements:requirements,stripe_updated_at:new Date().toISOString()}).eq('id',provider.id).throwOnError();
   return transfersActive?{ok:true,accountId:provider.stripe_account_id}:{ok:false,status:'provider_not_payout_ready',transferState};
 }
 
@@ -39,15 +39,15 @@ export async function POST(request:Request){
     if(error)return NextResponse.json({error:'Unable to load settlement queue.'},{status:500});
 
     for(const job of jobs||[]){
-      const {data:activeReserveHolds,error:reserveError}=await supabase.from('provider_reserve_holds').select('id,amount_pence,release_at').eq('job_id',job.id).eq('status','held');
+      const {data:activeReserveHolds,error:reserveError}=await supabase.from('provider_reserve_holds').select('id,amount_pence,release_at').eq('job_id',job.id).eq('status','held').throwOnError();
       if(reserveError){results.push({jobId:job.id,status:'reserve_check_failed'});continue}
       if(activeReserveHolds?.length){
         const reserveAmountPence=activeReserveHolds.reduce((sum,hold)=>sum+Number(hold.amount_pence||0),0);
-        await supabase.from('jobs').update({settlement_status:'held',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id);
+        await supabase.from('jobs').update({settlement_status:'held',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id).throwOnError();
         results.push({jobId:job.id,status:'reserve_hold_active',reserveAmountPence,releaseTargets:activeReserveHolds.map(hold=>hold.release_at).filter(Boolean)});
         continue;
       }
-      const {data:eligible,error:eligibilityError}=await supabase.rpc('mark_job_settlement_eligible',{p_job_id:job.id});
+      const {data:eligible,error:eligibilityError}=await supabase.rpc('mark_job_settlement_eligible',{p_job_id:job.id}).throwOnError();
       if(eligibilityError||!eligible){results.push({jobId:job.id,status:'blocked'});continue}
       if(!job.matched_provider_id||!job.provider_price_pence){results.push({jobId:job.id,status:'missing_provider_or_amount'});continue}
       const destination=await payoutDestination(supabase,stripe,job.matched_provider_id);
@@ -57,22 +57,27 @@ export async function POST(request:Request){
       if(!sourceChargeId&&job.stripe_payment_intent_id){
         const intent=await stripe.paymentIntents.retrieve(job.stripe_payment_intent_id as string);
         sourceChargeId=typeof intent.latest_charge==='string'?intent.latest_charge:intent.latest_charge?.id||null;
-        if(sourceChargeId)await supabase.from('jobs').update({stripe_charge_id:sourceChargeId,updated_at:new Date().toISOString()}).eq('id',job.id);
+        if(sourceChargeId)await supabase.from('jobs').update({stripe_charge_id:sourceChargeId,updated_at:new Date().toISOString()}).eq('id',job.id).throwOnError();
       }
       if(!sourceChargeId){results.push({jobId:job.id,status:'missing_source_charge'});continue}
 
       const transferGroup=job.stripe_transfer_group||transferGroupForJob(job.id);
-      await supabase.from('jobs').update({settlement_status:'transferring',stripe_transfer_group:transferGroup,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id).eq('settlement_status','eligible');
+      const {data:claim,error:claimError}=await supabase.from('jobs')
+        .update({settlement_status:'transferring',stripe_transfer_group:transferGroup,payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()})
+        .eq('id',job.id).eq('settlement_status','eligible').is('stripe_transfer_id',null).select('id');
+      if(claimError||claim?.length!==1){results.push({jobId:job.id,status:'not_claimed'});continue}
       try{
         const transfer=await stripe.transfers.create({amount:Number(job.provider_price_pence),currency:'gbp',destination:destination.accountId,source_transaction:sourceChargeId,transfer_group:transferGroup,metadata:{job_id:job.id,provider_id:job.matched_provider_id,source_charge_id:sourceChargeId}},{idempotencyKey:`service-business:settlement:${job.id}`});
         const now=new Date().toISOString();
-        await supabase.from('jobs').update({stripe_transfer_id:transfer.id,settlement_status:'transferred',transferred_at:now,payment_updated_at:now,updated_at:now}).eq('id',job.id);
-        await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:transfer:${transfer.id}`,p_source_type:'stripe_transfer',p_source_id:transfer.id,p_currency:'GBP',p_lines:[{accountCode:'provider_payable',direction:'debit',amountPence:Number(job.provider_price_pence),jobId:job.id,providerId:job.matched_provider_id},{accountCode:'stripe_clearing',direction:'credit',amountPence:Number(job.provider_price_pence),jobId:job.id,providerId:job.matched_provider_id}],p_metadata:{stripeTransferId:transfer.id,transferGroup,sourceChargeId}});
-        await supabase.from('audit_events').insert({event_type:'settlement.transferred',entity_type:'job',entity_id:job.id,metadata:{providerId:job.matched_provider_id,amountPence:Number(job.provider_price_pence),stripeTransferId:transfer.id,sourceChargeId}});
+        await supabase.from('jobs').update({stripe_transfer_id:transfer.id,settlement_status:'transferred',transferred_at:now,payment_updated_at:now,updated_at:now}).eq('id',job.id).throwOnError();
+        await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:transfer:${transfer.id}`,p_source_type:'stripe_transfer',p_source_id:transfer.id,p_currency:'GBP',p_lines:[{accountCode:'provider_payable',direction:'debit',amountPence:Number(job.provider_price_pence),jobId:job.id,providerId:job.matched_provider_id},{accountCode:'stripe_clearing',direction:'credit',amountPence:Number(job.provider_price_pence),jobId:job.id,providerId:job.matched_provider_id}],p_metadata:{stripeTransferId:transfer.id,transferGroup,sourceChargeId}}).throwOnError();
+        await supabase.from('audit_events').insert({event_type:'settlement.transferred',entity_type:'job',entity_id:job.id,metadata:{providerId:job.matched_provider_id,amountPence:Number(job.provider_price_pence),stripeTransferId:transfer.id,sourceChargeId}}).throwOnError();
         results.push({jobId:job.id,status:'transferred',transferId:transfer.id,amountPence:Number(job.provider_price_pence),sourceChargeId});
       }catch(transferError){
-        await supabase.from('jobs').update({settlement_status:'eligible',payment_updated_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id).eq('settlement_status','transferring');
-        results.push({jobId:job.id,status:'transfer_failed',error:transferError instanceof Error?transferError.message:'transfer failed'});
+        // Transfer outcomes can be ambiguous after a timeout. Do not automatically reopen
+        // the claim and risk a second transfer after Stripe's idempotency retention expires.
+        // Leave it in transferring for an explicit Stripe reconciliation/recovery check.
+        results.push({jobId:job.id,status:'transfer_requires_reconciliation',error:transferError instanceof Error?transferError.message:'transfer failed'});
       }
     }
 
@@ -87,10 +92,10 @@ export async function POST(request:Request){
     if(quoteError)return NextResponse.json({error:'Unable to load additional-work settlement queue.',results},{status:500});
 
     for(const quote of quotes||[]){
-      const {data:job}=await supabase.from('jobs').select('id,status').eq('id',quote.job_id).maybeSingle();
+      const {data:job}=await supabase.from('jobs').select('id,status').eq('id',quote.job_id).maybeSingle().throwOnError();
       if(!job||job.status!=='completed'){results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_waiting_for_completion'});continue}
-      const {data:blockers}=await supabase.from('job_cases').select('id').eq('job_id',quote.job_id).in('status',['open','pending']).limit(1);
-      if(blockers?.length){await supabase.from('follow_on_quotes').update({settlement_status:'blocked'}).eq('id',quote.id);results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_blocked_by_case'});continue}
+      const {data:blockers}=await supabase.from('job_cases').select('id').eq('job_id',quote.job_id).in('status',['open','pending']).limit(1).throwOnError();
+      if(blockers?.length){await supabase.from('follow_on_quotes').update({settlement_status:'blocked'}).eq('id',quote.id).throwOnError();results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_blocked_by_case'});continue}
       if(!quote.provider_id||!quote.provider_price_pence){results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_missing_provider_or_amount'});continue}
       const destination=await payoutDestination(supabase,stripe,quote.provider_id);
       if(!destination.ok){results.push({jobId:quote.job_id,quoteId:quote.id,status:destination.status,transferState:destination.transferState});continue}
@@ -99,22 +104,25 @@ export async function POST(request:Request){
       if(!sourceChargeId&&quote.stripe_payment_intent_id){
         const intent=await stripe.paymentIntents.retrieve(quote.stripe_payment_intent_id as string);
         sourceChargeId=typeof intent.latest_charge==='string'?intent.latest_charge:intent.latest_charge?.id||null;
-        if(sourceChargeId)await supabase.from('follow_on_quotes').update({stripe_charge_id:sourceChargeId,payment_updated_at:new Date().toISOString()}).eq('id',quote.id);
+        if(sourceChargeId)await supabase.from('follow_on_quotes').update({stripe_charge_id:sourceChargeId,payment_updated_at:new Date().toISOString()}).eq('id',quote.id).throwOnError();
       }
       if(!sourceChargeId){results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_missing_source_charge'});continue}
 
       const transferGroup=quote.stripe_transfer_group||`${transferGroupForJob(quote.job_id)}:follow-on:${quote.id}`;
-      await supabase.from('follow_on_quotes').update({settlement_status:'transferring',stripe_transfer_group:transferGroup,payment_updated_at:new Date().toISOString()}).eq('id',quote.id).in('settlement_status',['held','eligible']);
+      const {data:quoteClaim,error:quoteClaimError}=await supabase.from('follow_on_quotes')
+        .update({settlement_status:'transferring',stripe_transfer_group:transferGroup,payment_updated_at:new Date().toISOString()})
+        .eq('id',quote.id).in('settlement_status',['held','eligible']).is('stripe_transfer_id',null).select('id');
+      if(quoteClaimError||quoteClaim?.length!==1){results.push({jobId:quote.job_id,quoteId:quote.id,status:'not_claimed'});continue}
       try{
         const transfer=await stripe.transfers.create({amount:Number(quote.provider_price_pence),currency:'gbp',destination:destination.accountId,source_transaction:sourceChargeId,transfer_group:transferGroup,metadata:{payment_kind:'follow_on_quote',job_id:quote.job_id,follow_on_quote_id:quote.id,provider_id:quote.provider_id,source_charge_id:sourceChargeId}},{idempotencyKey:`service-business:follow-on-settlement:${quote.id}`});
         const now=new Date().toISOString();
-        await supabase.from('follow_on_quotes').update({stripe_transfer_id:transfer.id,settlement_status:'transferred',transferred_at:now,payment_updated_at:now}).eq('id',quote.id);
-        await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:follow_on_transfer:${transfer.id}`,p_source_type:'stripe_follow_on_transfer',p_source_id:transfer.id,p_currency:'GBP',p_lines:[{accountCode:'provider_payable',direction:'debit',amountPence:Number(quote.provider_price_pence),jobId:quote.job_id,providerId:quote.provider_id},{accountCode:'stripe_clearing',direction:'credit',amountPence:Number(quote.provider_price_pence),jobId:quote.job_id,providerId:quote.provider_id}],p_metadata:{followOnQuoteId:quote.id,stripeTransferId:transfer.id,transferGroup,sourceChargeId}});
-        await supabase.from('audit_events').insert({event_type:'follow_on_quote.settlement_transferred',entity_type:'job',entity_id:quote.job_id,metadata:{quoteId:quote.id,providerId:quote.provider_id,amountPence:Number(quote.provider_price_pence),stripeTransferId:transfer.id,sourceChargeId}});
+        await supabase.from('follow_on_quotes').update({stripe_transfer_id:transfer.id,settlement_status:'transferred',transferred_at:now,payment_updated_at:now}).eq('id',quote.id).throwOnError();
+        await supabase.rpc('post_finance_journal',{p_idempotency_key:`stripe:follow_on_transfer:${transfer.id}`,p_source_type:'stripe_follow_on_transfer',p_source_id:transfer.id,p_currency:'GBP',p_lines:[{accountCode:'provider_payable',direction:'debit',amountPence:Number(quote.provider_price_pence),jobId:quote.job_id,providerId:quote.provider_id},{accountCode:'stripe_clearing',direction:'credit',amountPence:Number(quote.provider_price_pence),jobId:quote.job_id,providerId:quote.provider_id}],p_metadata:{followOnQuoteId:quote.id,stripeTransferId:transfer.id,transferGroup,sourceChargeId}}).throwOnError();
+        await supabase.from('audit_events').insert({event_type:'follow_on_quote.settlement_transferred',entity_type:'job',entity_id:quote.job_id,metadata:{quoteId:quote.id,providerId:quote.provider_id,amountPence:Number(quote.provider_price_pence),stripeTransferId:transfer.id,sourceChargeId}}).throwOnError();
         results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_transferred',transferId:transfer.id,amountPence:Number(quote.provider_price_pence)});
       }catch(transferError){
-        await supabase.from('follow_on_quotes').update({settlement_status:'eligible',payment_updated_at:new Date().toISOString()}).eq('id',quote.id).eq('settlement_status','transferring');
-        results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_transfer_failed',error:transferError instanceof Error?transferError.message:'transfer failed'});
+        // Preserve the claim until the remote transfer result has been reconciled.
+        results.push({jobId:quote.job_id,quoteId:quote.id,status:'follow_on_transfer_requires_reconciliation',error:transferError instanceof Error?transferError.message:'transfer failed'});
       }
     }
 
