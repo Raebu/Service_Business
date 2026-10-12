@@ -8,6 +8,8 @@ import {POST as coverageRecruitment} from '@/app/api/internal/coverage-recruitme
 import {POST as financeClose} from '@/app/api/internal/finance-close/route';
 import {POST as reserves} from '@/app/api/internal/reserves/route';
 import {POST as competencyLifecycle} from '@/app/api/internal/competency-lifecycle/route';
+import {POST as providerNurture} from '@/app/api/internal/provider-nurture/route';
+import {POST as growthIntelligence} from '@/app/api/internal/growth-intelligence/route';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -19,7 +21,9 @@ const workers:InternalWorker[]=[
   {path:'/api/internal/coverage-recruitment',run:coverageRecruitment},
   {path:'/api/internal/finance-close',run:financeClose},
   {path:'/api/internal/reserves',run:reserves},
-  {path:'/api/internal/competency-lifecycle',run:competencyLifecycle}
+  {path:'/api/internal/competency-lifecycle',run:competencyLifecycle},
+  {path:'/api/internal/provider-nurture',run:providerNurture},
+  {path:'/api/internal/growth-intelligence',run:growthIntelligence}
 ];
 
 export async function GET(request:Request){

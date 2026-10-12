@@ -21,7 +21,17 @@ export async function POST(request:Request){
       status:'new'
     }).select('id,status,created_at').single();
     if(error)return NextResponse.json({error:'Unable to save the business enquiry.'},{status:500});
-    return NextResponse.json({enquiry:data,message:'Business enquiry received. It is now in the managed-service pipeline.'},{status:201});
+    const {error:notifyError}=await supabase.rpc('queue_notification_once',{
+      p_dedupe_key:`business.enquiry_received:${data.id}`,
+      p_recipient_user_id:null,p_recipient_email:input.email,
+      p_channel:'email',p_template_key:'business.enquiry_received',
+      p_payload:{enquiryId:data.id,organisation:input.organisation,contactName:input.contactName},
+      p_scheduled_at:new Date().toISOString()
+    });
+    return NextResponse.json({
+      enquiry:data,acknowledgementQueued:!notifyError,
+      message:'Business enquiry received for review. No booking or service capacity has been guaranteed.'
+    },{status:201});
   }catch(error){
     if(error instanceof SupabaseConfigurationError)return NextResponse.json({error:'Business enquiries are not connected to the production database yet.'},{status:503});
     return NextResponse.json({error:'Unable to process the business enquiry.'},{status:500});
