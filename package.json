@@ -12,7 +12,7 @@
     "build": "pnpm --filter @service-business/web build",
     "lint": "pnpm --filter @service-business/web lint",
     "typecheck": "pnpm --filter @service-business/web typecheck",
-    "test": "tsx --test packages/platform/src/*.test.ts"
+    "test": "tsx --test packages/platform/src/*.test.ts apps/web/src/lib/worker-runner.test.ts"
   },
   "devDependencies": {
     "next": "15.5.18",
