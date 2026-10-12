@@ -39,5 +39,9 @@ jobs:
           print('Signed non-payment event HTTP:',positive[0])
           if positive[0]!=200:
             print('FAIL: signed event was not processed',positive[1]);sys.exit(1)
-          print('PASS: invalid signature rejected and signed non-payment event accepted')
+          repeated=post('t='+ts+',v1='+mac)
+          print('Repeated signed event HTTP:',repeated[0])
+          if repeated[0]!=200 or 'duplicate' not in repeated[1]:
+            print('FAIL: repeat did not receive a duplicate acknowledgement',repeated[1]);sys.exit(1)
+          print('PASS: invalid signature rejected, signed event accepted, duplicate acknowledged')
           PY
