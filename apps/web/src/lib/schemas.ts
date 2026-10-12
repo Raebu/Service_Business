@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { electricalServices } from '@service-business/electrical';
+import { electricalServices } from '../../../../verticals/electrical/config';
 
 const postcode=z.string().trim().min(2).max(12).transform(v=>v.toUpperCase().replace(/\s+/g,' '));
 const email=z.string().trim().toLowerCase().email();
