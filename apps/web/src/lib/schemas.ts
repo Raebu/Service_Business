@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { electricalServices } from '@service-business/electrical';
 
 const postcode=z.string().trim().min(2).max(12).transform(v=>v.toUpperCase().replace(/\s+/g,' '));
 const email=z.string().trim().toLowerCase().email();
@@ -46,7 +47,7 @@ export const jobIntakeSchema=z.object({
   description:z.string().trim().min(8).max(5000),
   urgency:z.enum(['routine','soon','urgent','emergency']).default('routine'),
   preferredWindow:z.string().trim().max(120).optional().or(z.literal('')),
-  serviceKey:z.string().trim().max(120).optional().or(z.literal('')),
+  serviceKey:z.enum(electricalServices).optional().or(z.literal('')),
   scheduleMode:z.enum(['asap','exact','window','flexible']).default('asap'),
   requestedStart:z.string().datetime({offset:true}).optional().or(z.literal('')),
   requestedEnd:z.string().datetime({offset:true}).optional().or(z.literal('')),
