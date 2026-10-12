@@ -39,8 +39,12 @@ export function canRunWorkflow(kind:string,env:Record<string,string|undefined>){
     case 'dispatch':case 'notifications':case 'compliance':case 'recovery_monitor':
     case 'sla_monitor':case 'reconciliation':
       return env.ENABLE_OPERATIONAL_CYCLE==='true';
-    case 'finance_close':case 'reserves':case 'competency_lifecycle':
-    case 'coverage_recruitment':case 'labour_demand':case 'quality_ranking':
+    case 'finance_close':return env.ENABLE_DAILY_AUTONOMY==='true'
+      &&env.ENABLE_AUTOMATED_FINANCE_CLOSE==='true';
+    case 'reserves':return env.ENABLE_DAILY_AUTONOMY==='true'
+      &&env.ENABLE_AUTOMATED_RESERVE_RELEASE==='true';
+    case 'competency_lifecycle':case 'coverage_recruitment':
+    case 'labour_demand':case 'quality_ranking':
     case 'operational_kpis':case 'assurance':return env.ENABLE_DAILY_AUTONOMY==='true';
     default:return false;
   }
