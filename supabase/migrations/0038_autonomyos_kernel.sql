@@ -145,12 +145,23 @@ begin
    lease_token:=new_token;payload:=task.payload;
    return next;
  end loop;
- -- Expired final leases must not remain invisibly leased forever.
- update public.autonomy_workflows w set
-   status='dead',lease_token=null,lease_until=null,completed_at=now(),updated_at=now(),
-   last_error_code='lease_expired_max_attempts'
- where w.status='leased' and w.lease_until<now() and w.attempts>=w.max_attempts;
-end;$$;
+ -- Expired final leases must become dead letters WITH a matching audit incident.
+ for task in select w.id,w.attempts from public.autonomy_workflows w
+   where w.status='leased' and w.lease_until<now() and w.attempts>=w.max_attempts
+   for update of w skip locked limit 100
+ loop
+   update public.autonomy_workflows set
+     status='dead',lease_token=null,lease_until=null,
+     completed_at=now(),updated_at=now(),last_error_code='lease_expired_max_attempts'
+   where id=task.id;
+   insert into public.autonomy_execution_events(workflow_id,attempt,event_type,details)
+     values(task.id,task.attempts,'dead_lettered','{"reason":"expired_final_lease"}');
+   insert into public.autonomy_incidents(fingerprint,workflow_id,severity,category,summary)
+   values('dead:'||task.id,task.id,'high','workflow','Workflow expired its final execution lease')
+   on conflict(fingerprint) do update set
+     occurrences=public.autonomy_incidents.occurrences+1,last_seen_at=now();
+ end loop;
+end;$;
 
 create or replace function public.autonomy_finish(p_id uuid,p_lease_token uuid,
  p_success boolean,p_error_code text default null)
@@ -205,3 +216,13 @@ revoke all on function public.autonomy_domain(text),public.autonomy_enqueue(text
 grant execute on function public.autonomy_domain(text),public.autonomy_enqueue(text,text,jsonb,timestamptz),
  public.autonomy_claim(integer),public.autonomy_finish(uuid,uuid,boolean,text),
  public.autonomy_cancel(uuid) to service_role;
+
+-- Audits cannot be altered after creation, even by normal service-role clients.
+create or replace function public.prevent_autonomy_event_mutation()
+returns trigger language plpgsql set search_path=public as $$
+begin
+ raise exception 'autonomy_execution_history_is_append_only';
+end;$$;
+create trigger autonomy_execution_events_immutable
+before update or delete on public.autonomy_execution_events
+for each row execute function public.prevent_autonomy_event_mutation();
