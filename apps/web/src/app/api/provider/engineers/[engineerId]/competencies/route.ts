@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOrganisationCapability } from '@/lib/authorisation';
+import { mayIndependentlyVerifyCompetency } from '@/lib/competency-review';
 import { getUserSupabase } from '@/lib/supabase/server';
 import { getAdminSupabase, SupabaseConfigurationError } from '@/lib/supabase/admin';
 
@@ -60,7 +61,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{engineerId
     if(!engineer)return NextResponse.json({error:'Engineer not found.'},{status:404});
     const auth=await requireOrganisationCapability(engineer.organisation_id,'manage_team');
     if(!auth)return NextResponse.json({error:'Team-management capability required to review competency evidence.'},{status:403});
-    if(parsed.data.action==='verify'&&engineer.user_id===auth.user.id)return NextResponse.json({error:'Independent verification is required. You cannot verify your own competency evidence.'},{status:403});
+    if(parsed.data.action==='verify'&&!mayIndependentlyVerifyCompetency(engineer.user_id,auth.user.id))return NextResponse.json({error:'Independent verification is required. You cannot verify your own competency evidence.'},{status:403});
     const {data:existing}=await admin.from('engineer_competencies').select('id,service_key,competency_level,evidence_reference,expires_at,verified').eq('id',parsed.data.competencyId).eq('engineer_id',engineerId).maybeSingle();
     if(!existing)return NextResponse.json({error:'Competency record not found.'},{status:404});
     if(parsed.data.action==='verify'){
