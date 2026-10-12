@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {actionRisk,canRunWorkflow,excludedFromAutonomy,isRunSuccess,
- isWorkflowKind,retryBackoffSeconds,workflowDomains} from './autonomy';
+ isWorkflowKind,retryBackoffSeconds,workflowDomains,sameOriginAdminRequest} from './autonomy';
 
 test('all allowed workflow kinds have a bounded domain and action risk',()=>{
   for(const kind of Object.keys(workflowDomains)){
@@ -35,4 +35,13 @@ test('partial success is treated as failure',()=>{
  assert.equal(isRunSuccess(207),false);
  assert.equal(isRunSuccess(401),false);
  assert.equal(isRunSuccess(503),false);
+});
+
+test('browser control mutations are same-origin only',()=>{
+ assert.equal(sameOriginAdminRequest('https://service-business-ten.vercel.app',
+    'https://service-business-ten.vercel.app/api/autonomy/admin/controls'),true);
+ assert.equal(sameOriginAdminRequest('https://attacker.example',
+    'https://service-business-ten.vercel.app/api/autonomy/admin/controls'),false);
+ assert.equal(sameOriginAdminRequest(null,
+    'https://service-business-ten.vercel.app/api/autonomy/admin/controls'),false);
 });
