@@ -89,7 +89,7 @@ export async function POST(request:Request){
         .eq('received_at',previous.received_at).select('event_id');
       if(claimError||claimed?.length!==1)return NextResponse.json({error:'Unable to claim Stripe event retry.'},{status:503});
     }
-    if(receiptError)return NextResponse.json({error:'Unable to record Stripe event.'},{status:500});
+    if(receiptError&&receiptError.code!=='23505')return NextResponse.json({error:'Unable to record Stripe event.'},{status:500});
 
     try{
       if(event.type==='checkout.session.completed'||event.type==='checkout.session.async_payment_succeeded'){
