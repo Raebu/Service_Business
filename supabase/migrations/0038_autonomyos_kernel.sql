@@ -161,7 +161,7 @@ begin
    on conflict(fingerprint) do update set
      occurrences=public.autonomy_incidents.occurrences+1,last_seen_at=now();
  end loop;
-end;$;
+end;$$;
 
 create or replace function public.autonomy_finish(p_id uuid,p_lease_token uuid,
  p_success boolean,p_error_code text default null)
